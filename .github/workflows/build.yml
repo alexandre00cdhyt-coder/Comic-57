@@ -36,6 +36,7 @@ jobs:
           mkdir -p app/src/main/java/com/mangauniversal/app/domain/repository
           mkdir -p app/src/main/java/com/mangauniversal/app/data/repository
           mkdir -p app/src/main/java/com/mangauniversal/app/di
+          mkdir -p app/src/main/java/com/mangauniversal/app/ui
 
       - name: Generar settings.gradle
         run: |
@@ -82,6 +83,14 @@ jobs:
                   android:label="Manga Universal"
                   android:supportsRtl="true"
                   android:theme="@android:style/Theme.Material.NoTitleBar">
+                  <activity
+                      android:name=".ui.MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
               </application>
           </manifest>
           END_MANIFEST
@@ -147,7 +156,7 @@ jobs:
           }
           END_APP_BUILD
 
-      - name: Generar Clases Kotlin Básicas
+      - name: Generar Clases Base y MainActivity
         run: |
           cat << 'END_APP_CLASS' > app/src/main/java/com/mangauniversal/app/MangaApplication.kt
           package com.mangauniversal.app
@@ -156,6 +165,38 @@ jobs:
           @HiltAndroidApp
           class MangaApplication : Application()
           END_APP_CLASS
+
+          cat << 'END_MAIN_ACTIVITY' > app/src/main/java/com/mangauniversal/app/ui/MainActivity.kt
+          package com.mangauniversal.app.ui
+
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.Surface
+          import androidx.compose.material3.Text
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import dagger.hilt.android.AndroidEntryPoint
+
+          @AndroidEntryPoint
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContent {
+                      MaterialTheme {
+                          Surface(modifier = Modifier.fillMaxSize()) {
+                              Box(contentAlignment = Alignment.Center) {
+                                  Text(text = "Manga Universal - Aplicación Lista")
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+          END_MAIN_ACTIVITY
 
           cat << 'END_READING_DIR' > app/src/main/java/com/mangauniversal/app/domain/model/ReadingDirection.kt
           package com.mangauniversal.app.domain.model
@@ -167,7 +208,7 @@ jobs:
           enum class ReadingMode { HORIZONTAL_PAGED, VERTICAL_CONTINUOUS }
           END_READING_MODE
 
-      - name: Generar Comparator y Modelos
+      - name: Generar Utilidades y Modelos Domain
         run: |
           cat << 'END_NATURAL_ORDER' > app/src/main/java/com/mangauniversal/app/domain/util/NaturalOrderComparator.kt
           package com.mangauniversal.app.domain.util
@@ -345,7 +386,7 @@ jobs:
           }
           END_DIR_READER
 
-      - name: Generar Capa de Persistencia (Room DB)
+      - name: Generar Persistencia (Room DB)
         run: |
           cat << 'END_BOOK_ENTITY' > app/src/main/java/com/mangauniversal/app/data/local/entity/BookEntity.kt
           package com.mangauniversal.app.data.local.entity
@@ -393,149 +434,4 @@ jobs:
               @Query("SELECT * FROM books WHERE id = :bookId") suspend fun getBookById(bookId: String): BookEntity?
               @Query("SELECT * FROM books ORDER BY lastReadTimestamp DESC") fun getAllBooks(): Flow<List<BookEntity>>
           }
-          END_BOOK_DAO
-
-          cat << 'END_HIST_DAO' > app/src/main/java/com/mangauniversal/app/data/local/dao/HistoryDao.kt
-          package com.mangauniversal.app.data.local.dao
-          import androidx.room.Dao
-          import androidx.room.Insert
-          import androidx.room.OnConflictStrategy
-          import androidx.room.Query
-          import com.mangauniversal.app.data.local.entity.HistoryEntity
-          import kotlinx.coroutines.flow.Flow
-          @Dao
-          interface HistoryDao {
-              @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertOrUpdate(history: HistoryEntity)
-              @Query("SELECT * FROM history ORDER BY timestamp DESC") fun getHistory(): Flow<List<HistoryEntity>>
-              @Query("DELETE FROM history WHERE bookId = :bookId") suspend fun deleteHistory(bookId: String)
-          }
-          END_HIST_DAO
-
-          cat << 'END_APP_DB' > app/src/main/java/com/mangauniversal/app/data/local/AppDatabase.kt
-          package com.mangauniversal.app.data.local
-          import androidx.room.Database
-          import androidx.room.RoomDatabase
-          import com.mangauniversal.app.data.local.dao.BookDao
-          import com.mangauniversal.app.data.local.dao.HistoryDao
-          import com.mangauniversal.app.data.local.entity.BookEntity
-          import com.mangauniversal.app.data.local.entity.HistoryEntity
-          @Database(entities = [BookEntity::class, HistoryEntity::class], version = 1, exportSchema = false)
-          abstract class AppDatabase : RoomDatabase() {
-              abstract fun bookDao(): BookDao
-              abstract fun historyDao(): HistoryDao
-          }
-          END_APP_DB
-
-      - name: Generar Repositorios y Módulos Hilt
-        run: |
-          cat << 'END_BOOK_REPO' > app/src/main/java/com/mangauniversal/app/domain/repository/BookRepository.kt
-          package com.mangauniversal.app.domain.repository
-          import com.mangauniversal.app.data.local.entity.HistoryEntity
-          import com.mangauniversal.app.domain.model.Book
-          import com.mangauniversal.app.domain.model.Page
-          import kotlinx.coroutines.flow.Flow
-          interface BookRepository {
-              suspend fun loadPages(filePath: String): List<Page>
-              suspend fun saveProgress(bookId: String, title: String, filePath: String, page: Int, totalPages: Int)
-              fun getHistory(): Flow<List<HistoryEntity>>
-              suspend fun getBook(bookId: String): Book?
-          }
-          END_BOOK_REPO
-
-          cat << 'END_REPO_IMPL' > app/src/main/java/com/mangauniversal/app/data/repository/BookRepositoryImpl.kt
-          package com.mangauniversal.app.data.repository
-          import com.mangauniversal.app.data.archive.CbzArchiveReader
-          import com.mangauniversal.app.data.archive.DirectoryArchiveReader
-          import com.mangauniversal.app.data.local.dao.BookDao
-          import com.mangauniversal.app.data.local.dao.HistoryDao
-          import com.mangauniversal.app.data.local.entity.BookEntity
-          import com.mangauniversal.app.data.local.entity.HistoryEntity
-          import com.mangauniversal.app.domain.model.Book
-          import com.mangauniversal.app.domain.model.Page
-          import com.mangauniversal.app.domain.model.ReadingDirection
-          import com.mangauniversal.app.domain.model.ReadingMode
-          import com.mangauniversal.app.domain.repository.BookRepository
-          import kotlinx.coroutines.flow.Flow
-          import javax.inject.Inject
-          class BookRepositoryImpl @Inject constructor(
-              private val cbzReader: CbzArchiveReader,
-              private val directoryReader: DirectoryArchiveReader,
-              private val bookDao: BookDao,
-              private val historyDao: HistoryDao
-          ) : BookRepository {
-              override suspend fun loadPages(filePath: String): List<Page> {
-                  return when {
-                      cbzReader.isSupported(filePath) -> cbzReader.getPages(filePath)
-                      directoryReader.isSupported(filePath) -> directoryReader.getPages(filePath)
-                      else -> emptyList()
-                  }
-              }
-              override suspend fun saveProgress(bookId: String, title: String, filePath: String, page: Int, totalPages: Int) {
-                  val now = System.currentTimeMillis()
-                  val bookEntity = BookEntity(bookId, title, filePath, totalPages, page, now, ReadingMode.HORIZONTAL_PAGED.name, ReadingDirection.RIGHT_TO_LEFT.name)
-                  bookDao.insertOrUpdate(bookEntity)
-                  val historyEntity = HistoryEntity(bookId, title, filePath, page, totalPages, now)
-                  historyDao.insertOrUpdate(historyEntity)
-              }
-              override fun getHistory(): Flow<List<HistoryEntity>> = historyDao.getHistory()
-              override suspend fun getBook(bookId: String): Book? {
-                  val entity = bookDao.getBookById(bookId) ?: return null
-                  return Book(entity.id, entity.title, entity.filePath, entity.totalPages, entity.lastReadPage, ReadingMode.valueOf(entity.readingMode), ReadingDirection.valueOf(entity.readingDirection))
-              }
-          }
-          END_REPO_IMPL
-
-          cat << 'END_DB_MOD' > app/src/main/java/com/mangauniversal/app/di/DatabaseModule.kt
-          package com.mangauniversal.app.di
-          import android.content.Context
-          import androidx.room.Room
-          import com.mangauniversal.app.data.local.AppDatabase
-          import com.mangauniversal.app.data.local.dao.BookDao
-          import com.mangauniversal.app.data.local.dao.HistoryDao
-          import dagger.Module
-          import dagger.Provides
-          import dagger.hilt.InstallIn
-          import dagger.hilt.android.qualifiers.ApplicationContext
-          import dagger.hilt.components.SingletonComponent
-          import javax.inject.Singleton
-          @Module
-          @InstallIn(SingletonComponent::class)
-          object DatabaseModule {
-              @Provides
-              @Singleton
-              fun provideDatabase(@ApplicationContext context: Context): AppDatabase = Room.databaseBuilder(context, AppDatabase::class.java, "manga_universal.db").build()
-
-              @Provides
-              fun provideBookDao(db: AppDatabase): BookDao = db.bookDao()
-
-              @Provides
-              fun provideHistoryDao(db: AppDatabase): HistoryDao = db.historyDao()
-          }
-          END_DB_MOD
-
-          cat << 'END_REPO_MOD' > app/src/main/java/com/mangauniversal/app/di/RepositoryModule.kt
-          package com.mangauniversal.app.di
-          import com.mangauniversal.app.data.repository.BookRepositoryImpl
-          import com.mangauniversal.app.domain.repository.BookRepository
-          import dagger.Binds
-          import dagger.Module
-          import dagger.hilt.InstallIn
-          import dagger.hilt.components.SingletonComponent
-          import javax.inject.Singleton
-          @Module
-          @InstallIn(SingletonComponent::class)
-          abstract class RepositoryModule {
-              @Binds
-              @Singleton
-              abstract fun bindBookRepository(impl: BookRepositoryImpl): BookRepository
-          }
-          END_REPO_MOD
-
-      - name: Compilar APK Debug
-        run: ./gradlew assembleDebug --no-daemon
-
-      - name: Subir el APK para descargar
-        uses: actions/upload-artifact@v4
-        with:
-          name: MangaUniversal-v1.0.0-APK
-          path: '**/build/outputs/apk/**/*.apk'
+          END_BO
