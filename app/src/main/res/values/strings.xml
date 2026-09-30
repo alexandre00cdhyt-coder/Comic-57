@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Manga Universal</string>
+    <string name="history_title">Historial de Lectura</string>
+    <string name="reader_title">Lector</string>
+    <string name="empty_history">No hay lectura reciente</string>
+    <string name="page_indicator">Página %1$d de %2$d</string>
+    <string name="error_opening_file">Error al abrir el archivo o formato no soportado</string>
+</resources>
