@@ -27,7 +27,7 @@ jobs:
           mkdir -p app/src/main/java/com/mangauniversal/app/domain/model
           mkdir -p app/src/main/java/com/mangauniversal/app/ui
 
-      - name: Configurar Gradle Wrapper Ligero
+      - name: Descargar e Inicializar Gradle Wrapper Oficial
         run: |
           cat << 'END_WRAPPER_PROP' > gradle/wrapper/gradle-wrapper.properties
           distributionBase=GRADLE_USER_HOME
@@ -39,8 +39,24 @@ jobs:
           zipStorePath=wrapper/dists
           END_WRAPPER_PROP
 
-          # Generar gradlew ejecutable usando el gradle nativo del sistema
-          gradle wrapper --gradle-version 8.2
+          # Descarga directa del JAR del wrapper oficial sin depender del sistema local
+          curl -sS -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradle/wrapper/gradle-wrapper.jar
+
+          # Script ejecutable de gradlew nativo
+          cat << 'END_GRADLEW' > gradlew
+          #!/usr/bin/env sh
+          DIR=""
+          case "`uname`" in
+              CYGWIN* ) DIR=`cygpath -w "$PWD"` ;;
+              * ) DIR="$PWD" ;;
+          esac
+          JAVACMD="java"
+          if [ -n "$JAVA_HOME" ] ; then
+              JAVACMD="$JAVA_HOME/bin/java"
+          fi
+          exec "$JAVACMD" "-Dorg.gradle.appname=gradlew" -classpath "$DIR/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"
+          END_GRADLEW
+
           chmod +x gradlew
 
       - name: Generar settings.gradle
@@ -199,7 +215,7 @@ jobs:
           enum class ReadingMode { HORIZONTAL_PAGED, VERTICAL_CONTINUOUS }
           END_MODE
 
-      - name: Compilar APK con Gradle (Modo Seguro)
+      - name: Compilar APK con Gradle
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Subir APK Generado como Artefacto
