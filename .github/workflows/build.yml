@@ -13,7 +13,19 @@ jobs:
       - name: Descargar el código fuente
         uses: actions/checkout@v4
 
-      - name: Generar archivos fuente automáticamente
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Instalar Gradle del sistema e Inicializar Wrapper
+        run: |
+          sudo apt-get update && sudo apt-get install -y gradle
+          gradle wrapper --gradle-version 8.5
+          chmod +x gradlew
+
+      - name: Generar Estructura Base del Proyecto Gradle y Android
         run: |
           mkdir -p app/src/main/java/com/mangauniversal/app/domain/util
           mkdir -p app/src/main/java/com/mangauniversal/app/domain/model
@@ -24,11 +36,128 @@ jobs:
           mkdir -p app/src/main/java/com/mangauniversal/app/domain/repository
           mkdir -p app/src/main/java/com/mangauniversal/app/data/repository
           mkdir -p app/src/main/java/com/mangauniversal/app/di
-          mkdir -p app/src/main/java/com/mangauniversal/app/ui/theme
-          mkdir -p app/src/main/java/com/mangauniversal/app/ui/reader/components
-          mkdir -p app/src/main/java/com/mangauniversal/app/ui/reader
-          mkdir -p app/src/main/java/com/mangauniversal/app/ui/history
+          mkdir -p app/src/main/res/values
 
+          # settings.gradle
+          cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "MangaUniversal"
+          include ':app'
+          EOF
+
+          # build.gradle Raíz
+          cat << 'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.2.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+              id 'com.google.dagger.hilt.android' version '2.50' apply false
+              id 'com.google.devtools.ksp' version '1.9.22-1.0.17' apply false
+          }
+          EOF
+
+          # AndroidManifest.xml
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+              <application
+                  android:name=".MangaApplication"
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="Manga Universal"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.Material.NoTitleBar">
+              </application>
+          </manifest>
+          EOF
+
+          # app/build.gradle
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+              id 'com.google.devtools.ksp'
+              id 'com.google.dagger.hilt.android'
+          }
+
+          android {
+              namespace 'com.mangauniversal.app'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.mangauniversal.app"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+              buildFeatures {
+                  compose true
+              }
+              composeOptions {
+                  kotlinCompilerExtensionVersion '1.5.8'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+              implementation 'androidx.activity:activity-compose:1.8.2'
+              implementation platform('androidx.compose:compose-bom:2024.02.00')
+              implementation 'androidx.compose.ui:ui'
+              implementation 'androidx.compose.ui:ui-graphics'
+              implementation 'androidx.compose.ui:ui-tooling-preview'
+              implementation 'androidx.compose.material3:material3'
+
+              // Room
+              implementation 'androidx.room:room-runtime:2.6.1'
+              implementation 'androidx.room:room-ktx:2.6.1'
+              ksp 'androidx.room:room-compiler:2.6.1'
+
+              // Hilt
+              implementation 'com.google.dagger:hilt-android:2.50'
+              ksp 'com.google.dagger:hilt-compiler:2.50'
+          }
+          EOF
+
+          # Application Class
+          cat << 'EOF' > app/src/main/java/com/mangauniversal/app/MangaApplication.kt
+          package com.mangauniversal.app
+          import android.app.Application
+          import dagger.hilt.android.HiltAndroidApp
+          @HiltAndroidApp
+          class MangaApplication : Application()
+          EOF
+
+      - name: Generar Código Fuente Kotlin
+        run: |
           cat << 'EOF' > app/src/main/java/com/mangauniversal/app/domain/util/NaturalOrderComparator.kt
           package com.mangauniversal.app.domain.util
           import java.util.Comparator
@@ -191,6 +320,114 @@ jobs:
                   val dir = File(fileUriOrPath)
                   if (!dir.exists() || !dir.isDirectory) return@withContext emptyList()
                   val files = dir.listFiles { _, name -> supportedExtensions.contains(name.substringAfterLast('.', "").lowercase()) && !name.startsWith(".") } ?: emptyArray()
+                  val sortedFiles = files.sortedWith(Comparator { f1, f2 -> NaturalOrderComparator().compare(f1.name, f2.name) })
+                  return@withContext sortedFiles.mapIndexed { index, file ->
+                      Page(index = index, name = file.name, archivePath = file.absolutePath, bitmapSupplier = { loadBitmapFromFile(file) })
+                  }
+              }
+              private suspend fun loadBitmapFromFile(file: File): Bitmap? = withContext(Dispatchers.IO) {
+                  try {
+                      val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }
+                      return@withContext BitmapFactory.decodeFile(file.absolutePath, options)
+                  } catch (e: Exception) { e.printStackTrace(); return@withContext null }
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/mangauniversal/app/data/local/entity/BookEntity.kt
+          package com.mangauniversal.app.data.local.entity
+          import androidx.room.Entity
+          import androidx.room.PrimaryKey
+          @Entity(tableName = "books")
+          data class BookEntity(
+              @PrimaryKey val id: String,
+              val title: String,
+              val filePath: String,
+              val totalPages: Int,
+              val lastReadPage: Int,
+              val lastReadTimestamp: Long,
+              val readingMode: String,
+              val readingDirection: String
+          )
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/mangauniversal/app/data/local/entity/HistoryEntity.kt
+          package com.mangauniversal.app.data.local.entity
+          import androidx.room.Entity
+          import androidx.room.PrimaryKey
+          @Entity(tableName = "history")
+          data class HistoryEntity(
+              @PrimaryKey val bookId: String,
+              val title: String,
+              val filePath: String,
+              val lastPage: Int,
+              val totalPages: Int,
+              val timestamp: Long
+          )
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/mangauniversal/app/data/local/dao/BookDao.kt
+          package com.mangauniversal.app.data.local.dao
+          import androidx.room.Dao
+          import androidx.room.Insert
+          import androidx.room.OnConflictStrategy
+          import androidx.room.Query
+          import com.mangauniversal.app.data.local.entity.BookEntity
+          import kotlinx.coroutines.flow.Flow
+          @Dao
+          interface BookDao {
+              @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertOrUpdate(book: BookEntity)
+              @Query("SELECT * FROM books WHERE id = :bookId") suspend fun getBookById(bookId: String): BookEntity?
+              @Query("SELECT * FROM books ORDER BY lastReadTimestamp DESC") fun getAllBooks(): Flow<List<BookEntity>>
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/mangauniversal/app/data/local/dao/HistoryDao.kt
+          package com.mangauniversal.app.data.local.dao
+          import androidx.room.Dao
+          import androidx.room.Insert
+          import androidx.room.OnConflictStrategy
+          import androidx.room.Query
+          import com.mangauniversal.app.data.local.entity.HistoryEntity
+          import kotlinx.coroutines.flow.Flow
+          @Dao
+          interface HistoryDao {
+              @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertOrUpdate(history: HistoryEntity)
+              @Query("SELECT * FROM history ORDER BY timestamp DESC") fun getHistory(): Flow<List<HistoryEntity>>
+              @Query("DELETE FROM history WHERE bookId = :bookId") suspend fun deleteHistory(bookId: String)
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/mangauniversal/app/data/local/AppDatabase.kt
+          package com.mangauniversal.app.data.local
+          import androidx.room.Database
+          import androidx.room.RoomDatabase
+          import com.mangauniversal.app.data.local.dao.BookDao
+          import com.mangauniversal.app.data.local.dao.HistoryDao
+          import com.mangauniversal.app.data.local.entity.BookEntity
+          import com.mangauniversal.app.data.local.entity.HistoryEntity
+          @Database(entities = [BookEntity::class, HistoryEntity::class], version = 1, exportSchema = false)
+          abstract class AppDatabase : RoomDatabase() {
+              abstract fun bookDao(): BookDao
+              abstract fun historyDao(): HistoryDao
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/mangauniversal/app/domain/repository/BookRepository.kt
+          package com.mangauniversal.app.domain.repository
+          import com.mangauniversal.app.data.local.entity.HistoryEntity
+          import com.mangauniversal.app.domain.model.Book
+          import com.mangauniversal.app.domain.model.Page
+          import kotlinx.coroutines.flow.Flow
+          interface BookRepository {
+              suspend fun loadPages(filePath: String): List<Page>
+              suspend fun saveProgress(bookId: String, title: String, filePath: String, page: Int, totalPages: Int)
+              fun getHistory(): Flow<List<HistoryEntity>>
+              suspend fun getBook(bookId: String): Book?
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/mangauniversal/app/data/repository/BookRepositoryImp -> supportedExtensions.contains(name.substringAfterLast('.', "").lowercase()) && !name.startsWith(".") } ?: emptyArray()
                   val sortedFiles = files.sortedWith(Comparator { f1, f2 -> NaturalOrderComparator().compare(f1.name, f2.name) })
                   return@withContext sortedFiles.mapIndexed { index, file ->
                       Page(index = index, name = file.name, archivePath = file.absolutePath, bitmapSupplier = { loadBitmapFromFile(file) })
