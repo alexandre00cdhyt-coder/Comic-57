@@ -1,4 +1,4 @@
-name: Compilar APK Manga Universal
+name: Compilar APK Pesada
 
 on:
   push:
@@ -29,6 +29,7 @@ jobs:
           rm -rf app build.gradle settings.gradle gradle.properties
           mkdir -p app/src/main/java/com/mangauniversal/app
           mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/layout
 
       - name: Crear settings.gradle
         run: |
@@ -65,11 +66,11 @@ jobs:
           cat > gradle.properties << 'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
           kotlin.code.style=official
           EOF
 
-      - name: Crear app/build.gradle
+      - name: Crear app/build.gradle con dependencias pesadas
         run: |
           cat > app/build.gradle << 'EOF'
           plugins {
@@ -89,6 +90,15 @@ jobs:
                   versionName '1.0.0'
               }
 
+              buildTypes {
+                  debug {
+                      minifyEnabled false
+                  }
+                  release {
+                      minifyEnabled false
+                  }
+              }
+
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
@@ -97,11 +107,54 @@ jobs:
               kotlinOptions {
                   jvmTarget = '17'
               }
+
+              buildFeatures {
+                  viewBinding true
+              }
+
+              packagingOptions {
+                  resources {
+                      excludes += ['/META-INF/{AL2.0,LGPL2.1}']
+                  }
+              }
           }
 
           dependencies {
+              // AndroidX base
               implementation 'androidx.core:core-ktx:1.12.0'
               implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+              implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+              implementation 'androidx.recyclerview:recyclerview:1.3.2'
+              implementation 'androidx.viewpager2:viewpager2:1.0.0'
+
+              // Ciclo de vida y corrutinas (pesado)
+              implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+              implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+              implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+              // Red (pesado)
+              implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+              implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+              implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+              implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+
+              // Imágenes (muy pesado)
+              implementation 'io.coil-kt:coil:2.5.0'
+              implementation 'io.coil-kt:coil-gif:2.5.0'
+
+              // Base de datos (pesado)
+              implementation 'androidx.room:room-runtime:2.6.1'
+              implementation 'androidx.room:room-ktx:2.6.1'
+
+              // Parsing HTML (pesado)
+              implementation 'org.jsoup:jsoup:1.17.2'
+
+              // Paging (pesado)
+              implementation 'androidx.paging:paging-runtime-ktx:3.2.1'
+
+              // Splash screen
+              implementation 'androidx.core:core-splashscreen:1.0.1'
           }
           EOF
 
@@ -110,11 +163,17 @@ jobs:
           cat > app/src/main/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
               <application
                   android:allowBackup="true"
-                  android:label="Manga Universal"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="@string/app_name"
                   android:supportsRtl="true"
-                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  android:theme="@style/Theme.MangaUniversal">
+
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
@@ -127,6 +186,91 @@ jobs:
           </manifest>
           EOF
 
+      - name: Crear strings.xml
+        run: |
+          cat > app/src/main/res/values/strings.xml << 'EOF'
+          <resources>
+              <string name="app_name">Manga Universal</string>
+              <string name="welcome_title">Manga Universal</string>
+              <string name="welcome_subtitle">Cargando librerías pesadas...</string>
+          </resources>
+          EOF
+
+      - name: Crear themes.xml
+        run: |
+          cat > app/src/main/res/values/themes.xml << 'EOF'
+          <resources xmlns:tools="http://schemas.android.com/tools">
+              <style name="Theme.MangaUniversal" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+                  <item name="colorPrimary">#FF5722</item>
+                  <item name="colorPrimaryVariant">#E64A19</item>
+                  <item name="colorOnPrimary">#FFFFFF</item>
+                  <item name="colorSecondary">#03DAC5</item>
+                  <item name="colorOnSecondary">#000000</item>
+              </style>
+          </resources>
+          EOF
+
+      - name: Crear colores.xml
+        run: |
+          cat > app/src/main/res/values/colors.xml << 'EOF'
+          <resources>
+              <color name="purple_200">#FFBB86FC</color>
+              <color name="purple_500">#FF6200EE</color>
+              <color name="teal_200">#FF03DAC5</color>
+              <color name="black">#FF000000</color>
+              <color name="white">#FFFFFFFF</color>
+          </resources>
+          EOF
+
+      - name: Crear activity_main.xml
+        run: |
+          cat > app/src/main/res/layout/activity_main.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <androidx.constraintlayout.widget.ConstraintLayout
+              xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:padding="24dp">
+
+              <TextView
+                  android:id="@+id/titleText"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="@string/welcome_title"
+                  android:textSize="28sp"
+                  android:textStyle="bold"
+                  app:layout_constraintTop_toTopOf="parent"
+                  app:layout_constraintStart_toStartOf="parent"
+                  app:layout_constraintEnd_toEndOf="parent"
+                  app:layout_constraintBottom_toTopOf="@id/subtitleText" />
+
+              <TextView
+                  android:id="@+id/subtitleText"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_marginTop="12dp"
+                  android:text="@string/welcome_subtitle"
+                  android:textSize="16sp"
+                  app:layout_constraintTop_toBottomOf="@id/titleText"
+                  app:layout_constraintStart_toStartOf="parent"
+                  app:layout_constraintEnd_toEndOf="parent"
+                  app:layout_constraintBottom_toBottomOf="parent" />
+
+          </androidx.constraintlayout.widget.ConstraintLayout>
+          EOF
+
+      - name: Crear iconos mipmap (placeholder)
+        run: |
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/purple_500"/>
+              <foreground android:drawable="@color/teal_200"/>
+          </adaptive-icon>
+          EOF
+
       - name: Crear MainActivity.kt
         run: |
           cat > app/src/main/java/com/mangauniversal/app/MainActivity.kt << 'EOF'
@@ -134,19 +278,27 @@ jobs:
 
           import android.os.Bundle
           import androidx.appcompat.app.AppCompatActivity
+          import com.mangauniversal.app.databinding.ActivityMainBinding
 
           class MainActivity : AppCompatActivity() {
+
+              private lateinit var binding: ActivityMainBinding
+
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
+                  binding = ActivityMainBinding.inflate(layoutInflater)
+                  setContentView(binding.root)
+
+                  binding.subtitleText.text = "APK pesada lista. Dependencias cargadas."
               }
           }
           EOF
 
       - name: Compilar APK
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Subir APK
         uses: actions/upload-artifact@v4
         with:
-          name: MangaUniversal-debug-apk
+          name: MangaUniversal-pesada-apk
           path: app/build/outputs/apk/debug/app-debug.apk
