@@ -8,11 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
-      - name: Obtener codigo
+      - name: Descargar el código fuente
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -21,173 +19,134 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Crear estructura
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2'
+
+      - name: Limpiar estructura previa
         run: |
-          rm -rf *
+          rm -rf app build.gradle settings.gradle gradle.properties
           mkdir -p app/src/main/java/com/mangauniversal/app
           mkdir -p app/src/main/res/values
-          mkdir -p gradle/wrapper
 
-      - name: gradle-wrapper.properties
-        run: |
-          cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
-distributionBase=GRADLE_USER_HOME
-distributionPath=wrapper/dists
-distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
-networkTimeout=10000
-validateDistributionUrl=true
-zipStoreBase=GRADLE_USER_HOME
-zipStorePath=wrapper/dists
-EOF
-
-      - name: settings.gradle
+      - name: Crear settings.gradle
         run: |
           cat > settings.gradle << 'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-rootProject.name = "MangaUniversal"
-include ':app'
-EOF
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = 'MangaUniversal'
+          include ':app'
+          EOF
 
-      - name: build.gradle raiz
+      - name: Crear build.gradle raíz
         run: |
           cat > build.gradle << 'EOF'
-plugins {
-    id 'com.android.application' version '8.2.2' apply false
-    id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
-}
-EOF
+          plugins {
+              id 'com.android.application' version '8.2.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
+          }
+          EOF
 
-      - name: app/build.gradle
+      - name: Crear gradle.properties
+        run: |
+          cat > gradle.properties << 'EOF'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          kotlin.code.style=official
+          EOF
+
+      - name: Crear app/build.gradle
         run: |
           cat > app/build.gradle << 'EOF'
-plugins {
-    id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
-}
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
 
-android {
-    namespace 'com.mangauniversal.app'
-    compileSdk 34
+          android {
+              namespace 'com.mangauniversal.app'
+              compileSdk 34
 
-    defaultConfig {
-        applicationId "com.mangauniversal.app"
-        minSdk 24
-        targetSdk 34
-        versionCode 1
-        versionName "1.0.0"
-    }
+              defaultConfig {
+                  applicationId 'com.mangauniversal.app'
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0.0'
+              }
 
-    buildTypes {
-        debug { minifyEnabled false }
-        release { minifyEnabled false }
-    }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
 
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
 
-    kotlinOptions {
-        jvmTarget = '17'
-    }
-}
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          EOF
 
-dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0'
-}
-EOF
-
-      - name: colors.xml
-        run: |
-          cat > app/src/main/res/values/colors.xml << 'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
-    <color name="primary">#FF6200EE</color>
-</resources>
-EOF
-
-      - name: themes.xml
-        run: |
-          cat > app/src/main/res/values/themes.xml << 'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.MangaUniversal" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:statusBarColor">@color/black</item>
-    </style>
-</resources>
-EOF
-
-      - name: AndroidManifest.xml
+      - name: Crear AndroidManifest.xml
         run: |
           cat > app/src/main/AndroidManifest.xml << 'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.mangauniversal.app">
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:allowBackup="true"
+                  android:label="Manga Universal"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
 
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-
-    <application
-        android:allowBackup="true"
-        android:icon="@android:drawable/sym_def_app_icon"
-        android:label="Manga Universal"
-        android:theme="@style/Theme.MangaUniversal">
-        
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
-</manifest>
-EOF
-
-      - name: MainActivity.kt
+      - name: Crear MainActivity.kt
         run: |
           cat > app/src/main/java/com/mangauniversal/app/MainActivity.kt << 'EOF'
-package com.mangauniversal.app
+          package com.mangauniversal.app
 
-import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
+          import android.os.Bundle
+          import androidx.appcompat.app.AppCompatActivity
 
-class MainActivity : AppCompatActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(android.R.layout.simple_list_item_1)
-    }
-}
-EOF
-
-      - name: Crear Gradle Wrapper
-        run: |
-          gradle wrapper --gradle-version 8.5 --distribution-type bin
-          chmod +x gradlew
+          class MainActivity : AppCompatActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+              }
+          }
+          EOF
 
       - name: Compilar APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon
 
       - name: Subir APK
         uses: actions/upload-artifact@v4
         with:
-          name: MangaUniversal-APK
+          name: MangaUniversal-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
