@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: 📥 Obtener código
@@ -19,14 +21,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 🧹 Limpiar y crear estructura
+      - name: 🧹 Crear estructura completa
         run: |
           rm -rf *
           mkdir -p app/src/main/java/com/mangauniversal/app
           mkdir -p app/src/main/res/{layout,values}
           mkdir -p gradle/wrapper
 
-      - name: ⚙️ Archivo gradle-wrapper.properties
+      - name: ⚙️ gradle-wrapper.properties
         run: |
           cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
 distributionBase=GRADLE_USER_HOME
@@ -176,15 +178,16 @@ class MainActivity : AppCompatActivity() {
 }
 EOF
 
-      - name: 🔧 Crear Gradle Wrapper
+      - name: 🔧 Crear Gradle Wrapper CORRECTAMENTE
         run: |
-          curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradlew -o gradlew
+          # Usar Gradle instalado para generar el wrapper oficial
+          gradle wrapper --gradle-version 8.5 --distribution-type bin
           chmod +x gradlew
 
       - name: 🔨 Compilar APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: 📦 Descargar APK
+      - name: 📦 Subir APK
         uses: actions/upload-artifact@v4
         with:
           name: MangaUniversal-APK
