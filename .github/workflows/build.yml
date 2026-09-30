@@ -383,4 +383,30 @@ jobs:
           abstract class RepositoryModule {
               @Binds
               @Singleton
-              abstract f
+              abstract fun bindBookRepository(impl: BookRepositoryImpl): BookRepository
+          }
+          EOF
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Configurar Gradle 8.5
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
+
+      - name: Dar permisos a Gradle
+        run: chmod +x gradlew || true
+
+      - name: Compilar APK Debug
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Subir el APK para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: MangaUniversal-v1.0.0-APK
+          path: '**/build/outputs/apk/**/*.apk'
+
