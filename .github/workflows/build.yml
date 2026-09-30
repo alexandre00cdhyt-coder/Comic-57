@@ -12,23 +12,23 @@ jobs:
       contents: read
 
     steps:
-      - name: 📥 Obtener código
+      - name: Obtener codigo
         uses: actions/checkout@v4
 
-      - name: ☕ Configurar Java 17
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: 🧹 Crear estructura completa
+      - name: Crear estructura
         run: |
           rm -rf *
           mkdir -p app/src/main/java/com/mangauniversal/app
-          mkdir -p app/src/main/res/{layout,values}
+          mkdir -p app/src/main/res/values
           mkdir -p gradle/wrapper
 
-      - name: ⚙️ gradle-wrapper.properties
+      - name: gradle-wrapper.properties
         run: |
           cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
 distributionBase=GRADLE_USER_HOME
@@ -40,7 +40,7 @@ zipStoreBase=GRADLE_USER_HOME
 zipStorePath=wrapper/dists
 EOF
 
-      - name: 📄 settings.gradle
+      - name: settings.gradle
         run: |
           cat > settings.gradle << 'EOF'
 pluginManagement {
@@ -61,7 +61,7 @@ rootProject.name = "MangaUniversal"
 include ':app'
 EOF
 
-      - name: 📄 build.gradle (raíz)
+      - name: build.gradle raiz
         run: |
           cat > build.gradle << 'EOF'
 plugins {
@@ -70,7 +70,7 @@ plugins {
 }
 EOF
 
-      - name: 📄 app/build.gradle
+      - name: app/build.gradle
         run: |
           cat > app/build.gradle << 'EOF'
 plugins {
@@ -112,7 +112,7 @@ dependencies {
 }
 EOF
 
-      - name: 🎨 colors.xml
+      - name: colors.xml
         run: |
           cat > app/src/main/res/values/colors.xml << 'EOF'
 <?xml version="1.0" encoding="utf-8"?>
@@ -123,7 +123,7 @@ EOF
 </resources>
 EOF
 
-      - name: 🎨 themes.xml
+      - name: themes.xml
         run: |
           cat > app/src/main/res/values/themes.xml << 'EOF'
 <?xml version="1.0" encoding="utf-8"?>
@@ -134,7 +134,7 @@ EOF
 </resources>
 EOF
 
-      - name: 📋 AndroidManifest.xml
+      - name: AndroidManifest.xml
         run: |
           cat > app/src/main/AndroidManifest.xml << 'EOF'
 <?xml version="1.0" encoding="utf-8"?>
@@ -162,7 +162,7 @@ EOF
 </manifest>
 EOF
 
-      - name: 📱 MainActivity.kt
+      - name: MainActivity.kt
         run: |
           cat > app/src/main/java/com/mangauniversal/app/MainActivity.kt << 'EOF'
 package com.mangauniversal.app
@@ -178,16 +178,15 @@ class MainActivity : AppCompatActivity() {
 }
 EOF
 
-      - name: 🔧 Crear Gradle Wrapper CORRECTAMENTE
+      - name: Crear Gradle Wrapper
         run: |
-          # Usar Gradle instalado para generar el wrapper oficial
           gradle wrapper --gradle-version 8.5 --distribution-type bin
           chmod +x gradlew
 
-      - name: 🔨 Compilar APK
+      - name: Compilar APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: 📦 Subir APK
+      - name: Subir APK
         uses: actions/upload-artifact@v4
         with:
           name: MangaUniversal-APK
