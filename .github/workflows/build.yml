@@ -19,13 +19,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Configurar Gradle Oficial (Evita fallos de wrapper)
+      - name: Configurar Gradle Oficial
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.5'
+          gradle-version: '8.4'
 
-      - name: Crear Estructura de Directorios
+      - name: Limpiar y crear carpetas del proyecto
         run: |
+          rm -rf app settings.gradle build.gradle
           mkdir -p app/src/main/java/com/mangauniversal/app/domain/model
           mkdir -p app/src/main/java/com/mangauniversal/app/ui
 
@@ -40,7 +41,6 @@ jobs:
               }
           }
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
                   google()
                   mavenCentral()
@@ -50,12 +50,12 @@ jobs:
           include ':app'
           END_SETTINGS
 
-      - name: Generar build.gradle Principal
+      - name: Generar build.gradle Raíz
         run: |
           cat << 'END_ROOT_BUILD' > build.gradle
           plugins {
-              id 'com.android.application' version '8.2.2' apply false
-              id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
+              id 'com.android.application' version '8.1.4' apply false
+              id 'org.jetbrains.kotlin.android' version '1.8.22' apply false
           }
           END_ROOT_BUILD
 
@@ -64,10 +64,7 @@ jobs:
           cat << 'END_MANIFEST' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
               <application
-                  android:name=".MangaApplication"
                   android:allowBackup="true"
                   android:label="Manga Universal"
                   android:supportsRtl="true"
@@ -104,11 +101,6 @@ jobs:
                   versionName "1.0.0"
               }
 
-              buildTypes {
-                  release {
-                      minifyEnabled false
-                  }
-              }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
@@ -120,31 +112,22 @@ jobs:
                   compose true
               }
               composeOptions {
-                  kotlinCompilerExtensionVersion '1.5.4'
+                  kotlinCompilerExtensionVersion '1.4.8'
               }
           }
 
           dependencies {
-              implementation 'androidx.core:core-ktx:1.12.0'
-              implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
-              implementation 'androidx.activity:activity-compose:1.8.2'
-              implementation platform('androidx.compose:compose-bom:2024.02.00')
+              implementation 'androidx.core:core-ktx:1.10.1'
+              implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.1'
+              implementation 'androidx.activity:activity-compose:1.7.2'
+              implementation platform('androidx.compose:compose-bom:2023.08.00')
               implementation 'androidx.compose.ui:ui'
-              implementation 'androidx.compose.ui:ui-graphics'
-              implementation 'androidx.compose.ui:ui-tooling-preview'
               implementation 'androidx.compose.material3:material3'
           }
           END_APP_BUILD
 
-      - name: Generar Código Fuente de la Aplicación
+      - name: Generar Código Kotlin
         run: |
-          cat << 'END_APP' > app/src/main/java/com/mangauniversal/app/MangaApplication.kt
-          package com.mangauniversal.app
-          import android.app.Application
-
-          class MangaApplication : Application()
-          END_APP
-
           cat << 'END_MAIN' > app/src/main/java/com/mangauniversal/app/ui/MainActivity.kt
           package com.mangauniversal.app.ui
 
@@ -166,7 +149,7 @@ jobs:
                       MaterialTheme {
                           Surface(modifier = Modifier.fillMaxSize()) {
                               Box(contentAlignment = Alignment.Center) {
-                                  Text(text = "Manga Universal - Compilado Correctamente")
+                                  Text(text = "Manga Universal - Compilado con Éxito")
                               }
                           }
                       }
@@ -175,20 +158,10 @@ jobs:
           }
           END_MAIN
 
-          cat << 'END_DIR' > app/src/main/java/com/mangauniversal/app/domain/model/ReadingDirection.kt
-          package com.mangauniversal.app.domain.model
-          enum class ReadingDirection { LEFT_TO_RIGHT, RIGHT_TO_LEFT }
-          END_DIR
+      - name: Compilar APK
+        run: gradle assembleDebug --stacktrace
 
-          cat << 'END_MODE' > app/src/main/java/com/mangauniversal/app/domain/model/ReadingMode.kt
-          package com.mangauniversal.app.domain.model
-          enum class ReadingMode { HORIZONTAL_PAGED, VERTICAL_CONTINUOUS }
-          END_MODE
-
-      - name: Compilar APK directamente con Gradle Global
-        run: gradle assembleDebug --no-daemon
-
-      - name: Subir APK Generado como Artefacto
+      - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: MangaUniversal-debug-apk
