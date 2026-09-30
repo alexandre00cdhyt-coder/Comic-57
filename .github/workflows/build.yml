@@ -22,14 +22,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Instalar Gradle del sistema e Inicializar Wrapper
+      - name: Crear Estructura de Directorios del Proyecto
         run: |
-          sudo apt-get update && sudo apt-get install -y gradle
-          gradle wrapper --gradle-version 8.5
-          chmod +x gradlew
-
-      - name: Crear Directorios del Proyecto
-        run: |
+          mkdir -p gradle/wrapper
           mkdir -p app/src/main/java/com/mangauniversal/app/domain/util
           mkdir -p app/src/main/java/com/mangauniversal/app/domain/model
           mkdir -p app/src/main/java/com/mangauniversal/app/data/archive
@@ -40,6 +35,22 @@ jobs:
           mkdir -p app/src/main/java/com/mangauniversal/app/data/repository
           mkdir -p app/src/main/java/com/mangauniversal/app/di
           mkdir -p app/src/main/java/com/mangauniversal/app/ui
+
+      - name: Inicializar Gradle Wrapper Automático
+        run: |
+          cat << 'END_WRAPPER_PROP' > gradle/wrapper/gradle-wrapper.properties
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
+          networkTimeout=10000
+          validateDistributionUrl=true
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          END_WRAPPER_PROP
+
+          # Inicializa gradlew usando la versión nativa de Gradle instalada en el sistema de GitHub
+          gradle wrapper --gradle-version 8.5
+          chmod +x gradlew
 
       - name: Generar settings.gradle
         run: |
@@ -435,4 +446,65 @@ jobs:
           interface BookDao {
               @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertOrUpdate(book: BookEntity)
               @Query("SELECT * FROM books WHERE id = :bookId") suspend fun getBookById(bookId: String): BookEntity?
-              @Query("SELECT * FROM books ORDER BY lastReadTimestamp DESC") fun getAll
+              @Query("SELECT * FROM books ORDER BY lastReadTimestamp DESC") fun getAllBooks(): Flow<List<BookEntity>>
+          }
+          END_BOOK_DAO
+
+          cat << 'END_APP_DB' > app/src/main/java/com/mangauniversal/app/data/local/AppDatabase.kt
+          package com.mangauniversal.app.data.local
+          import androidx.room.Database
+          import androidx.room.RoomDatabase
+          import com.mangauniversal.app.data.local.dao.BookDao
+          import com.mangauniversal.app.data.local.entity.BookEntity
+          import com.mangauniversal.app.data.local.entity.HistoryEntity
+
+          @Database(entities = [BookEntity::class, HistoryEntity::class], version = 1, exportSchema = false)
+          abstract class AppDatabase : RoomDatabase() {
+              abstract fun bookDao(): BookDao
+          }
+          END_APP_DB
+
+      - name: Generar Módulos Hilt (Inyección de Dependencias)
+        run: |
+          cat << 'END_DI' > app/src/main/java/com/mangauniversal/app/di/AppModule.kt
+          package com.mangauniversal.app.di
+
+          import android.content.Context
+          import androidx.room.Room
+          import com.mangauniversal.app.data.local.AppDatabase
+          import com.mangauniversal.app.data.local.dao.BookDao
+          import dagger.Module
+          import dagger.Provides
+          import dagger.hilt.InstallIn
+          import dagger.hilt.android.qualifiers.ApplicationContext
+          import dagger.hilt.components.SingletonComponent
+          import javax.inject.Singleton
+
+          @Module
+          @InstallIn(SingletonComponent::class)
+          object AppModule {
+
+              @Provides
+              @Singleton
+              fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
+                  return Room.databaseBuilder(
+                      context,
+                      AppDatabase::class.java,
+                      "manga_db"
+                  ).build()
+              }
+
+              @Provides
+              fun provideBookDao(db: AppDatabase): BookDao = db.bookDao()
+          }
+          END_DI
+
+      - name: Compilar APK con Gradle
+        run: ./gradlew assembleDebug
+
+      - name: Subir APK como Artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: MangaUniversal-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+
