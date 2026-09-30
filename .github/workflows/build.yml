@@ -435,16 +435,4 @@ jobs:
           interface BookDao {
               @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertOrUpdate(book: BookEntity)
               @Query("SELECT * FROM books WHERE id = :bookId") suspend fun getBookById(bookId: String): BookEntity?
-              @Query("SELECT * FROM books ORDER BY lastReadTimestamp DESC") fun getAllBooks(): Flow<List<BookEntity>>
-          }
-          END_BOOK_DAO
-
-      - name: Compilar APK con Gradle
-        run: ./gradlew assembleDebug
-
-      - name: Subir APK como Artefacto
-        uses: actions/upload-artifact@v4
-        with:
-          name: MangaUniversal-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-
+              @Query("SELECT * FROM books ORDER BY lastReadTimestamp DESC") fun getAll
