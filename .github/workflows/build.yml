@@ -12,8 +12,6 @@ jobs:
     steps:
       - name: Descargar el código fuente
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Configurar Java 17
         uses: actions/setup-java@v5
@@ -21,43 +19,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Configurar Gradle Oficial (Evita fallos de wrapper)
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
+
       - name: Crear Estructura de Directorios
         run: |
-          mkdir -p gradle/wrapper
           mkdir -p app/src/main/java/com/mangauniversal/app/domain/model
           mkdir -p app/src/main/java/com/mangauniversal/app/ui
-
-      - name: Descargar e Inicializar Gradle Wrapper Oficial
-        run: |
-          cat << 'END_WRAPPER_PROP' > gradle/wrapper/gradle-wrapper.properties
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.2-bin.zip
-          networkTimeout=10000
-          validateDistributionUrl=true
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          END_WRAPPER_PROP
-
-          # Descarga directa del JAR del wrapper oficial sin depender del sistema local
-          curl -sS -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradle/wrapper/gradle-wrapper.jar
-
-          # Script ejecutable de gradlew nativo
-          cat << 'END_GRADLEW' > gradlew
-          #!/usr/bin/env sh
-          DIR=""
-          case "`uname`" in
-              CYGWIN* ) DIR=`cygpath -w "$PWD"` ;;
-              * ) DIR="$PWD" ;;
-          esac
-          JAVACMD="java"
-          if [ -n "$JAVA_HOME" ] ; then
-              JAVACMD="$JAVA_HOME/bin/java"
-          fi
-          exec "$JAVACMD" "-Dorg.gradle.appname=gradlew" -classpath "$DIR/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"
-          END_GRADLEW
-
-          chmod +x gradlew
 
       - name: Generar settings.gradle
         run: |
@@ -196,7 +166,7 @@ jobs:
                       MaterialTheme {
                           Surface(modifier = Modifier.fillMaxSize()) {
                               Box(contentAlignment = Alignment.Center) {
-                                  Text(text = "Manga Universal - APK Compilado Correctamente")
+                                  Text(text = "Manga Universal - Compilado Correctamente")
                               }
                           }
                       }
@@ -215,8 +185,8 @@ jobs:
           enum class ReadingMode { HORIZONTAL_PAGED, VERTICAL_CONTINUOUS }
           END_MODE
 
-      - name: Compilar APK con Gradle
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Compilar APK directamente con Gradle Global
+        run: gradle assembleDebug --no-daemon
 
       - name: Subir APK Generado como Artefacto
         uses: actions/upload-artifact@v4
