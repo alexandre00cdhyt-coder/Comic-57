@@ -12,9 +12,12 @@ jobs:
     steps:
       - name: Descargar el código fuente
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
 
       - name: Configurar Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -432,6 +435,4 @@ jobs:
           interface BookDao {
               @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertOrUpdate(book: BookEntity)
               @Query("SELECT * FROM books WHERE id = :bookId") suspend fun getBookById(bookId: String): BookEntity?
-              @Query("SELECT * FROM books ORDER BY lastReadTimestamp DESC") fun getAllBooks(): Flow<List<BookEntity>>
-          }
-          END_BO
+              @Query("SELECT * FROM books ORDER BY lastReadTimestamp DESC") fun getAll
