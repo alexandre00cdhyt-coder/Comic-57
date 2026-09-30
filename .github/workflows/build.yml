@@ -14,7 +14,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: false
 
       - name: Configurar Java 17
         uses: actions/setup-java@v5
@@ -22,34 +21,26 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Crear Estructura de Directorios del Proyecto
+      - name: Crear Estructura de Directorios
         run: |
           mkdir -p gradle/wrapper
-          mkdir -p app/src/main/java/com/mangauniversal/app/domain/util
           mkdir -p app/src/main/java/com/mangauniversal/app/domain/model
-          mkdir -p app/src/main/java/com/mangauniversal/app/data/archive
-          mkdir -p app/src/main/java/com/mangauniversal/app/data/local/entity
-          mkdir -p app/src/main/java/com/mangauniversal/app/data/local/dao
-          mkdir -p app/src/main/java/com/mangauniversal/app/data/local
-          mkdir -p app/src/main/java/com/mangauniversal/app/domain/repository
-          mkdir -p app/src/main/java/com/mangauniversal/app/data/repository
-          mkdir -p app/src/main/java/com/mangauniversal/app/di
           mkdir -p app/src/main/java/com/mangauniversal/app/ui
 
-      - name: Inicializar Gradle Wrapper Automático
+      - name: Configurar Gradle Wrapper Ligero
         run: |
           cat << 'END_WRAPPER_PROP' > gradle/wrapper/gradle-wrapper.properties
           distributionBase=GRADLE_USER_HOME
           distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.2-bin.zip
           networkTimeout=10000
           validateDistributionUrl=true
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
           END_WRAPPER_PROP
 
-          # Inicializa gradlew usando la versión nativa de Gradle instalada en el sistema de GitHub
-          gradle wrapper --gradle-version 8.5
+          # Generar gradlew ejecutable usando el gradle nativo del sistema
+          gradle wrapper --gradle-version 8.2
           chmod +x gradlew
 
       - name: Generar settings.gradle
@@ -78,9 +69,7 @@ jobs:
           cat << 'END_ROOT_BUILD' > build.gradle
           plugins {
               id 'com.android.application' version '8.2.2' apply false
-              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
-              id 'com.google.dagger.hilt.android' version '2.50' apply false
-              id 'com.google.devtools.ksp' version '1.9.22-1.0.17' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
           }
           END_ROOT_BUILD
 
@@ -115,8 +104,6 @@ jobs:
           plugins {
               id 'com.android.application'
               id 'org.jetbrains.kotlin.android'
-              id 'com.google.devtools.ksp'
-              id 'com.google.dagger.hilt.android'
           }
 
           android {
@@ -147,7 +134,7 @@ jobs:
                   compose true
               }
               composeOptions {
-                  kotlinCompilerExtensionVersion '1.5.8'
+                  kotlinCompilerExtensionVersion '1.5.4'
               }
           }
 
@@ -160,27 +147,19 @@ jobs:
               implementation 'androidx.compose.ui:ui-graphics'
               implementation 'androidx.compose.ui:ui-tooling-preview'
               implementation 'androidx.compose.material3:material3'
-
-              implementation 'androidx.room:room-runtime:2.6.1'
-              implementation 'androidx.room:room-ktx:2.6.1'
-              ksp 'androidx.room:room-compiler:2.6.1'
-
-              implementation 'com.google.dagger:hilt-android:2.50'
-              ksp 'com.google.dagger:hilt-compiler:2.50'
           }
           END_APP_BUILD
 
-      - name: Generar Clases Base y MainActivity
+      - name: Generar Código Fuente de la Aplicación
         run: |
-          cat << 'END_APP_CLASS' > app/src/main/java/com/mangauniversal/app/MangaApplication.kt
+          cat << 'END_APP' > app/src/main/java/com/mangauniversal/app/MangaApplication.kt
           package com.mangauniversal.app
           import android.app.Application
-          import dagger.hilt.android.HiltAndroidApp
-          @HiltAndroidApp
-          class MangaApplication : Application()
-          END_APP_CLASS
 
-          cat << 'END_MAIN_ACTIVITY' > app/src/main/java/com/mangauniversal/app/ui/MainActivity.kt
+          class MangaApplication : Application()
+          END_APP
+
+          cat << 'END_MAIN' > app/src/main/java/com/mangauniversal/app/ui/MainActivity.kt
           package com.mangauniversal.app.ui
 
           import android.os.Bundle
@@ -193,9 +172,7 @@ jobs:
           import androidx.compose.material3.Text
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
-          import dagger.hilt.android.AndroidEntryPoint
 
-          @AndroidEntryPoint
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
@@ -203,308 +180,30 @@ jobs:
                       MaterialTheme {
                           Surface(modifier = Modifier.fillMaxSize()) {
                               Box(contentAlignment = Alignment.Center) {
-                                  Text(text = "Manga Universal - Aplicación Lista")
+                                  Text(text = "Manga Universal - APK Compilado Correctamente")
                               }
                           }
                       }
                   }
               }
           }
-          END_MAIN_ACTIVITY
+          END_MAIN
 
-          cat << 'END_READING_DIR' > app/src/main/java/com/mangauniversal/app/domain/model/ReadingDirection.kt
+          cat << 'END_DIR' > app/src/main/java/com/mangauniversal/app/domain/model/ReadingDirection.kt
           package com.mangauniversal.app.domain.model
           enum class ReadingDirection { LEFT_TO_RIGHT, RIGHT_TO_LEFT }
-          END_READING_DIR
+          END_DIR
 
-          cat << 'END_READING_MODE' > app/src/main/java/com/mangauniversal/app/domain/model/ReadingMode.kt
+          cat << 'END_MODE' > app/src/main/java/com/mangauniversal/app/domain/model/ReadingMode.kt
           package com.mangauniversal.app.domain.model
           enum class ReadingMode { HORIZONTAL_PAGED, VERTICAL_CONTINUOUS }
-          END_READING_MODE
+          END_MODE
 
-      - name: Generar Utilidades y Modelos Domain
-        run: |
-          cat << 'END_NATURAL_ORDER' > app/src/main/java/com/mangauniversal/app/domain/util/NaturalOrderComparator.kt
-          package com.mangauniversal.app.domain.util
-          import java.util.Comparator
-          class NaturalOrderComparator : Comparator<String> {
-              override fun compare(s1: String?, s2: String?): Int {
-                  if (s1 == null || s2 == null) return 0
-                  var i1 = 0
-                  var i2 = 0
-                  val len1 = s1.length
-                  val len2 = s2.length
-                  while (i1 < len1 && i2 < len2) {
-                      val c1 = s1[i1]
-                      val c2 = s2[i2]
-                      if (c1.isDigit() && c2.isDigit()) {
-                          val num1 = getChunk(s1, len1, i1)
-                          val num2 = getChunk(s2, len2, i2)
-                          i1 += num1.length
-                          i2 += num2.length
-                          val diff = num1.length - num2.length
-                          if (diff != 0) {
-                              val trimmed1 = num1.trimStart('0')
-                              val trimmed2 = num2.trimStart('0')
-                              if (trimmed1.length != trimmed2.length) return trimmed1.length - trimmed2.length
-                              val cmp = trimmed1.compareTo(trimmed2)
-                              if (cmp != 0) return cmp
-                          } else {
-                              val cmp = num1.compareTo(num2)
-                              if (cmp != 0) return cmp
-                          }
-                      } else {
-                          val cmp = c1.lowercaseChar().compareTo(c2.lowercaseChar())
-                          if (cmp != 0) return cmp
-                          i1++
-                          i2++
-                      }
-                  }
-                  return len1 - len2
-              }
-              private fun getChunk(s: String, length: Int, start: Int): String {
-                  val chunk = StringBuilder()
-                  var ptr = start
-                  while (ptr < length && s[ptr].isDigit()) { chunk.append(s[ptr]); ptr++ }
-                  return chunk.toString()
-              }
-          }
-          END_NATURAL_ORDER
+      - name: Compilar APK con Gradle (Modo Seguro)
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-          cat << 'END_PAGE_MODEL' > app/src/main/java/com/mangauniversal/app/domain/model/Page.kt
-          package com.mangauniversal.app.domain.model
-          import android.graphics.Bitmap
-          data class Page(
-              val index: Int,
-              val name: String,
-              val archivePath: String,
-              val bitmapSupplier: suspend () -> Bitmap?
-          )
-          END_PAGE_MODEL
-
-          cat << 'END_BOOK_MODEL' > app/src/main/java/com/mangauniversal/app/domain/model/Book.kt
-          package com.mangauniversal.app.domain.model
-          data class Book(
-              val id: String,
-              val title: String,
-              val filePath: String,
-              val totalPages: Int,
-              val lastReadPage: Int = 0,
-              val readingMode: ReadingMode = ReadingMode.HORIZONTAL_PAGED,
-              val readingDirection: ReadingDirection = ReadingDirection.RIGHT_TO_LEFT
-          )
-          END_BOOK_MODEL
-
-      - name: Generar Lectores de Archivos
-        run: |
-          cat << 'END_ARCHIVE_READER' > app/src/main/java/com/mangauniversal/app/data/archive/ArchiveReader.kt
-          package com.mangauniversal.app.data.archive
-          import com.mangauniversal.app.domain.model.Page
-          interface ArchiveReader {
-              suspend fun getPages(fileUriOrPath: String): List<Page>
-              fun isSupported(filePath: String): Boolean
-          }
-          END_ARCHIVE_READER
-
-          cat << 'END_CBZ_READER' > app/src/main/java/com/mangauniversal/app/data/archive/CbzArchiveReader.kt
-          package com.mangauniversal.app.data.archive
-          import android.content.Context
-          import android.graphics.Bitmap
-          import android.graphics.BitmapFactory
-          import android.net.Uri
-          import com.mangauniversal.app.domain.model.Page
-          import com.mangauniversal.app.domain.util.NaturalOrderComparator
-          import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.withContext
-          import java.io.InputStream
-          import java.util.zip.ZipEntry
-          import java.util.zip.ZipInputStream
-          import javax.inject.Inject
-          class CbzArchiveReader @Inject constructor(private val context: Context) : ArchiveReader {
-              private val supportedExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif")
-              override fun isSupported(filePath: String): Boolean {
-                  val lower = filePath.lowercase()
-                  return lower.endsWith(".cbz") || lower.endsWith(".zip")
-              }
-              override suspend fun getPages(fileUriOrPath: String): List<Page> = withContext(Dispatchers.IO) {
-                  val pageEntries = mutableListOf<String>()
-                  val uri = Uri.parse(fileUriOrPath)
-                  openInputStream(uri)?.use { inputStream ->
-                      ZipInputStream(inputStream).use { zip ->
-                          var entry: ZipEntry? = zip.nextEntry
-                          while (entry != null) {
-                              if (!entry.isDirectory && isImageFile(entry.name) && !isJunkFile(entry.name)) { pageEntries.add(entry.name) }
-                              zip.closeEntry(); entry = zip.nextEntry
-                          }
-                      }
-                  }
-                  val sortedEntries = pageEntries.sortedWith(NaturalOrderComparator())
-                  return@withContext sortedEntries.mapIndexed { index, entryName ->
-                      Page(index = index, name = entryName, archivePath = fileUriOrPath, bitmapSupplier = { loadBitmapFromZip(uri, entryName) })
-                  }
-              }
-              private suspend fun loadBitmapFromZip(uri: Uri, entryName: String): Bitmap? = withContext(Dispatchers.IO) {
-                  try {
-                      openInputStream(uri)?.use { inputStream ->
-                          ZipInputStream(inputStream).use { zip ->
-                              var entry: ZipEntry? = zip.nextEntry
-                              while (entry != null) {
-                                  if (entry.name == entryName) {
-                                      val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }
-                                      return@withContext BitmapFactory.decodeStream(zip, null, options)
-                                  }
-                                  zip.closeEntry(); entry = zip.nextEntry
-                              }
-                          }
-                      }
-                  } catch (e: Exception) { e.printStackTrace() }
-                  return@withContext null
-              }
-              private fun openInputStream(uri: Uri): InputStream? {
-                  return if (uri.scheme == "content") context.contentResolver.openInputStream(uri)
-                  else java.io.File(uri.path ?: "").inputStream()
-              }
-              private fun isImageFile(name: String) = supportedExtensions.contains(name.substringAfterLast('.', "").lowercase())
-              private fun isJunkFile(name: String) = name.contains("__MACOSX") || name.contains("Thumbs.db") || name.startsWith(".")
-          }
-          END_CBZ_READER
-
-          cat << 'END_DIR_READER' > app/src/main/java/com/mangauniversal/app/data/archive/DirectoryArchiveReader.kt
-          package com.mangauniversal.app.data.archive
-          import android.graphics.Bitmap
-          import android.graphics.BitmapFactory
-          import com.mangauniversal.app.domain.model.Page
-          import com.mangauniversal.app.domain.util.NaturalOrderComparator
-          import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.withContext
-          import java.io.File
-          import javax.inject.Inject
-          class DirectoryArchiveReader @Inject constructor() : ArchiveReader {
-              private val supportedExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif")
-              override fun isSupported(filePath: String): Boolean { val file = File(filePath); return file.exists() && file.isDirectory }
-              override suspend fun getPages(fileUriOrPath: String): List<Page> = withContext(Dispatchers.IO) {
-                  val dir = File(fileUriOrPath)
-                  if (!dir.exists() || !dir.isDirectory) return@withContext emptyList()
-                  val files = dir.listFiles { _, name -> supportedExtensions.contains(name.substringAfterLast('.', "").lowercase()) && !name.startsWith(".") } ?: emptyArray()
-                  val sortedFiles = files.sortedWith(Comparator { f1, f2 -> NaturalOrderComparator().compare(f1.name, f2.name) })
-                  return@withContext sortedFiles.mapIndexed { index, file ->
-                      Page(index = index, name = file.name, archivePath = file.absolutePath, bitmapSupplier = { loadBitmapFromFile(file) })
-                  }
-              }
-              private suspend fun loadBitmapFromFile(file: File): Bitmap? = withContext(Dispatchers.IO) {
-                  try {
-                      val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }
-                      return@withContext BitmapFactory.decodeFile(file.absolutePath, options)
-                  } catch (e: Exception) { e.printStackTrace(); return@withContext null }
-              }
-          }
-          END_DIR_READER
-
-      - name: Generar Persistencia (Room DB)
-        run: |
-          cat << 'END_BOOK_ENTITY' > app/src/main/java/com/mangauniversal/app/data/local/entity/BookEntity.kt
-          package com.mangauniversal.app.data.local.entity
-          import androidx.room.Entity
-          import androidx.room.PrimaryKey
-          @Entity(tableName = "books")
-          data class BookEntity(
-              @PrimaryKey val id: String,
-              val title: String,
-              val filePath: String,
-              val totalPages: Int,
-              val lastReadPage: Int,
-              val lastReadTimestamp: Long,
-              val readingMode: String,
-              val readingDirection: String
-          )
-          END_BOOK_ENTITY
-
-          cat << 'END_HIST_ENTITY' > app/src/main/java/com/mangauniversal/app/data/local/entity/HistoryEntity.kt
-          package com.mangauniversal.app.data.local.entity
-          import androidx.room.Entity
-          import androidx.room.PrimaryKey
-          @Entity(tableName = "history")
-          data class HistoryEntity(
-              @PrimaryKey val bookId: String,
-              val title: String,
-              val filePath: String,
-              val lastPage: Int,
-              val totalPages: Int,
-              val timestamp: Long
-          )
-          END_HIST_ENTITY
-
-          cat << 'END_BOOK_DAO' > app/src/main/java/com/mangauniversal/app/data/local/dao/BookDao.kt
-          package com.mangauniversal.app.data.local.dao
-          import androidx.room.Dao
-          import androidx.room.Insert
-          import androidx.room.OnConflictStrategy
-          import androidx.room.Query
-          import com.mangauniversal.app.data.local.entity.BookEntity
-          import kotlinx.coroutines.flow.Flow
-          @Dao
-          interface BookDao {
-              @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertOrUpdate(book: BookEntity)
-              @Query("SELECT * FROM books WHERE id = :bookId") suspend fun getBookById(bookId: String): BookEntity?
-              @Query("SELECT * FROM books ORDER BY lastReadTimestamp DESC") fun getAllBooks(): Flow<List<BookEntity>>
-          }
-          END_BOOK_DAO
-
-          cat << 'END_APP_DB' > app/src/main/java/com/mangauniversal/app/data/local/AppDatabase.kt
-          package com.mangauniversal.app.data.local
-          import androidx.room.Database
-          import androidx.room.RoomDatabase
-          import com.mangauniversal.app.data.local.dao.BookDao
-          import com.mangauniversal.app.data.local.entity.BookEntity
-          import com.mangauniversal.app.data.local.entity.HistoryEntity
-
-          @Database(entities = [BookEntity::class, HistoryEntity::class], version = 1, exportSchema = false)
-          abstract class AppDatabase : RoomDatabase() {
-              abstract fun bookDao(): BookDao
-          }
-          END_APP_DB
-
-      - name: Generar Módulos Hilt (Inyección de Dependencias)
-        run: |
-          cat << 'END_DI' > app/src/main/java/com/mangauniversal/app/di/AppModule.kt
-          package com.mangauniversal.app.di
-
-          import android.content.Context
-          import androidx.room.Room
-          import com.mangauniversal.app.data.local.AppDatabase
-          import com.mangauniversal.app.data.local.dao.BookDao
-          import dagger.Module
-          import dagger.Provides
-          import dagger.hilt.InstallIn
-          import dagger.hilt.android.qualifiers.ApplicationContext
-          import dagger.hilt.components.SingletonComponent
-          import javax.inject.Singleton
-
-          @Module
-          @InstallIn(SingletonComponent::class)
-          object AppModule {
-
-              @Provides
-              @Singleton
-              fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
-                  return Room.databaseBuilder(
-                      context,
-                      AppDatabase::class.java,
-                      "manga_db"
-                  ).build()
-              }
-
-              @Provides
-              fun provideBookDao(db: AppDatabase): BookDao = db.bookDao()
-          }
-          END_DI
-
-      - name: Compilar APK con Gradle
-        run: ./gradlew assembleDebug
-
-      - name: Subir APK como Artefacto
+      - name: Subir APK Generado como Artefacto
         uses: actions/upload-artifact@v4
         with:
           name: MangaUniversal-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
-
