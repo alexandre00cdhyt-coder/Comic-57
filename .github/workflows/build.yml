@@ -19,20 +19,19 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Configurar Gradle Oficial
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.4'
+          gradle-version: '8.5'
 
-      - name: Limpiar y crear carpetas del proyecto
+      - name: Preparar Estructura del Proyecto Limpia
         run: |
           rm -rf app settings.gradle build.gradle
-          mkdir -p app/src/main/java/com/mangauniversal/app/domain/model
-          mkdir -p app/src/main/java/com/mangauniversal/app/ui
+          mkdir -p app/src/main/java/com/mangauniversal/app
 
       - name: Generar settings.gradle
         run: |
-          cat << 'END_SETTINGS' > settings.gradle
+          cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
                   google()
@@ -41,6 +40,7 @@ jobs:
               }
           }
           dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
                   google()
                   mavenCentral()
@@ -48,42 +48,20 @@ jobs:
           }
           rootProject.name = "MangaUniversal"
           include ':app'
-          END_SETTINGS
+          EOF
 
       - name: Generar build.gradle Raíz
         run: |
-          cat << 'END_ROOT_BUILD' > build.gradle
+          cat << 'EOF' > build.gradle
           plugins {
-              id 'com.android.application' version '8.1.4' apply false
-              id 'org.jetbrains.kotlin.android' version '1.8.22' apply false
+              id 'com.android.application' version '8.2.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.20' apply false
           }
-          END_ROOT_BUILD
-
-      - name: Generar AndroidManifest.xml
-        run: |
-          cat << 'END_MANIFEST' > app/src/main/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <application
-                  android:allowBackup="true"
-                  android:label="Manga Universal"
-                  android:supportsRtl="true"
-                  android:theme="@android:style/Theme.Material.NoTitleBar">
-                  <activity
-                      android:name=".ui.MainActivity"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          END_MANIFEST
+          EOF
 
       - name: Generar app/build.gradle
         run: |
-          cat << 'END_APP_BUILD' > app/build.gradle
+          cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
               id 'org.jetbrains.kotlin.android'
@@ -108,58 +86,53 @@ jobs:
               kotlinOptions {
                   jvmTarget = '17'
               }
-              buildFeatures {
-                  compose true
-              }
-              composeOptions {
-                  kotlinCompilerExtensionVersion '1.4.8'
-              }
           }
 
           dependencies {
-              implementation 'androidx.core:core-ktx:1.10.1'
-              implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.1'
-              implementation 'androidx.activity:activity-compose:1.7.2'
-              implementation platform('androidx.compose:compose-bom:2023.08.00')
-              implementation 'androidx.compose.ui:ui'
-              implementation 'androidx.compose.material3:material3'
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
           }
-          END_APP_BUILD
+          EOF
 
-      - name: Generar Código Kotlin
+      - name: Generar AndroidManifest.xml
         run: |
-          cat << 'END_MAIN' > app/src/main/java/com/mangauniversal/app/ui/MainActivity.kt
-          package com.mangauniversal.app.ui
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:allowBackup="true"
+                  android:label="Manga Universal"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+      - name: Generar Código MainActivity.kt
+        run: |
+          cat << 'EOF' > app/src/main/java/com/mangauniversal/app/MainActivity.kt
+          package com.mangauniversal.app
 
           import android.os.Bundle
-          import androidx.activity.ComponentActivity
-          import androidx.activity.compose.setContent
-          import androidx.compose.foundation.layout.Box
-          import androidx.compose.foundation.layout.fillMaxSize
-          import androidx.compose.material3.MaterialTheme
-          import androidx.compose.material3.Surface
-          import androidx.compose.material3.Text
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
+          import androidx.appcompat.app.AppCompatActivity
 
-          class MainActivity : ComponentActivity() {
+          class MainActivity : AppCompatActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  setContent {
-                      MaterialTheme {
-                          Surface(modifier = Modifier.fillMaxSize()) {
-                              Box(contentAlignment = Alignment.Center) {
-                                  Text(text = "Manga Universal - Compilado con Éxito")
-                              }
-                          }
-                      }
-                  }
               }
           }
-          END_MAIN
+          EOF
 
       - name: Compilar APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle assembleDebug
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
