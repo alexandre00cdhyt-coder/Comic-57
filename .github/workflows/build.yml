@@ -30,9 +30,6 @@ jobs:
           mkdir -p app/src/main/java/com/mangauniversal/app
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/res/layout
-          mkdir -p app/src/main/res/menu
-          mkdir -p app/src/main/res/drawable
-          mkdir -p app/src/main/res/xml
           mkdir -p app/src/main/res/mipmap-anydpi-v26
 
       - name: settings.gradle
@@ -70,7 +67,7 @@ jobs:
           cat > gradle.properties << 'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
-          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          org.gradle.jvmargs=-Xmx2048m
           kotlin.code.style=official
           EOF
 
@@ -94,15 +91,6 @@ jobs:
                   versionName '1.0.0'
               }
 
-              buildTypes {
-                  debug {
-                      minifyEnabled false
-                  }
-                  release {
-                      minifyEnabled false
-                  }
-              }
-
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
@@ -124,14 +112,10 @@ jobs:
               implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
               implementation 'androidx.recyclerview:recyclerview:1.3.2'
               implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
-              implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
               implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
               implementation 'io.coil-kt:coil:2.5.0'
               implementation 'androidx.documentfile:documentfile:1.0.1'
-              implementation 'androidx.activity:activity-ktx:1.8.2'
-              implementation 'androidx.fragment:fragment-ktx:1.6.2'
               implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
-              implementation 'com.google.android.material:material:1.11.0'
           }
           EOF
 
@@ -142,15 +126,9 @@ jobs:
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
 
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-                  android:maxSdkVersion="32" />
-              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-                  android:maxSdkVersion="29" />
-              <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
-                  tools:ignore="ScopedStorage" />
-              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-              <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+              <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
 
               <application
                   android:allowBackup="true"
@@ -169,75 +147,15 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
-
-                  <activity
-                      android:name=".VisorActivity"
-                      android:exported="false"
-                      android:label="Visor" />
-
-                  <provider
-                      android:name="androidx.core.content.FileProvider"
-                      android:authorities="${applicationId}.fileprovider"
-                      android:exported="false"
-                      android:grantUriPermissions="true">
-                      <meta-data
-                          android:name="android.support.FILE_PROVIDER_PATHS"
-                          android:resource="@xml/file_paths" />
-                  </provider>
               </application>
           </manifest>
           EOF
 
-      - name: file_paths.xml
-        run: |
-          cat > app/src/main/res/xml/file_paths.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <paths xmlns:android="http://schemas.android.com/apk/res/android">
-              <external-path name="external" path="." />
-              <external-files-path name="external_files" path="." />
-              <files-path name="internal_files" path="." />
-              <cache-path name="cache" path="." />
-          </paths>
-          EOF
-
-      - name: strings.xml en español
+      - name: strings.xml
         run: |
           cat > app/src/main/res/values/strings.xml << 'EOF'
           <resources>
               <string name="app_name">Gestor de Archivos</string>
-              <string name="almacenamiento_interno">Almacenamiento interno</string>
-              <string name="almacenamiento_externo">Almacenamiento externo</string>
-              <string name="galeria">Galería</string>
-              <string name="documentos">Documentos</string>
-              <string name="descargas">Descargas</string>
-              <string name="imagenes">Imágenes</string>
-              <string name="videos">Videos</string>
-              <string name="musica">Música</string>
-              <string name="permiso_titulo">Permiso necesario</string>
-              <string name="permiso_mensaje">Esta app necesita acceso a tus archivos para funcionar. Por favor acepta el permiso.</string>
-              <string name="permiso_boton">Dar permiso</string>
-              <string name="carpeta_vacia">Carpeta vacía</string>
-              <string name="eliminar">Eliminar</string>
-              <string name="renombrar">Renombrar</string>
-              <string name="copiar">Copiar</string>
-              <string name="mover">Mover</string>
-              <string name="cancelar">Cancelar</string>
-              <string name="aceptar">Aceptar</string>
-              <string name="nombre_nuevo">Nombre nuevo</string>
-              <string name="confirmar_eliminar">¿Seguro que quieres eliminar?</string>
-              <string name="si">Sí</string>
-              <string name="no">No</string>
-              <string name="abrir">Abrir</string>
-              <string name="nueva_carpeta">Nueva carpeta</string>
-              <string name="nombre_carpeta">Nombre de la carpeta</string>
-              <string name="crear">Crear</string>
-              <string name="error">Error</string>
-              <string name="ok">OK</string>
-              <string name="atras">Atrás</string>
-              <string name="raiz">Raíz</string>
-              <string name="cargando">Cargando…</string>
-              <string name="operacion_exitosa">Operación exitosa</string>
-              <string name="operacion_fallida">Operación fallida</string>
           </resources>
           EOF
 
@@ -251,7 +169,6 @@ jobs:
                   <item name="colorOnPrimary">#FFFFFF</item>
                   <item name="colorSecondary">#00ACC1</item>
                   <item name="colorOnSecondary">#FFFFFF</item>
-                  <item name="android:statusBarColor">#0D47A1</item>
               </style>
           </resources>
           EOF
@@ -261,42 +178,8 @@ jobs:
           cat > app/src/main/res/values/colors.xml << 'EOF'
           <resources>
               <color name="azul">#1565C0</color>
-              <color name="azul_oscuro">#0D47A1</color>
               <color name="celeste">#00ACC1</color>
-              <color name="blanco">#FFFFFF</color>
-              <color name="negro">#000000</color>
-              <color name="gris">#757575</color>
-              <color name="rojo">#D32F2F</color>
           </resources>
-          EOF
-
-      - name: menu principal
-        run: |
-          cat > app/src/main/res/menu/menu_principal.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <menu xmlns:android="http://schemas.android.com/apk/res/android">
-              <item
-                  android:id="@+id/accion_nueva_carpeta"
-                  android:title="@string/nueva_carpeta"
-                  android:showAsAction="never" />
-              <item
-                  android:id="@+id/accion_actualizar"
-                  android:title="Actualizar"
-                  android:showAsAction="never" />
-          </menu>
-          EOF
-
-      - name: menu archivo
-        run: |
-          cat > app/src/main/res/menu/menu_archivo.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <menu xmlns:android="http://schemas.android.com/apk/res/android">
-              <item android:id="@+id/accion_abrir" android:title="@string/abrir" />
-              <item android:id="@+id/accion_renombrar" android:title="@string/renombrar" />
-              <item android:id="@+id/accion_copiar" android:title="@string/copiar" />
-              <item android:id="@+id/accion_mover" android:title="@string/mover" />
-              <item android:id="@+id/accion_eliminar" android:title="@string/eliminar" />
-          </menu>
           EOF
 
       - name: activity_main.xml
@@ -304,209 +187,49 @@ jobs:
           cat > app/src/main/res/layout/activity_main.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              xmlns:app="http://schemas.android.com/apk/res-auto"
               android:layout_width="match_parent"
               android:layout_height="match_parent"
-              android:orientation="vertical">
-
-              <com.google.android.material.appbar.MaterialToolbar
-                  android:id="@+id/toolbar"
-                  android:layout_width="match_parent"
-                  android:layout_height="?attr/actionBarSize"
-                  android:background="@color/azul"
-                  app:titleTextColor="@color/blanco"
-                  app:title="@string/app_name" />
+              android:orientation="vertical"
+              android:padding="16dp">
 
               <TextView
-                  android:id="@+id/rutaActual"
+                  android:id="@+id/titulo"
                   android:layout_width="match_parent"
                   android:layout_height="wrap_content"
-                  android:padding="12dp"
-                  android:background="#EEEEEE"
-                  android:textSize="12sp"
-                  android:ellipsize="start"
-                  android:singleLine="true"
-                  android:text="/" />
-
-              <LinearLayout
-                  android:layout_width="match_parent"
-                  android:layout_height="wrap_content"
-                  android:orientation="horizontal"
-                  android:padding="8dp"
-                  android:background="#F5F5F5">
-
-                  <Button
-                      android:id="@+id/btnInterno"
-                      android:layout_width="0dp"
-                      android:layout_height="wrap_content"
-                      android:layout_weight="1"
-                      android:textSize="11sp"
-                      android:text="@string/almacenamiento_interno" />
-
-                  <Button
-                      android:id="@+id/btnExterno"
-                      android:layout_width="0dp"
-                      android:layout_height="wrap_content"
-                      android:layout_weight="1"
-                      android:textSize="11sp"
-                      android:text="@string/almacenamiento_externo" />
-
-                  <Button
-                      android:id="@+id/btnGaleria"
-                      android:layout_width="0dp"
-                      android:layout_height="wrap_content"
-                      android:layout_weight="1"
-                      android:textSize="11sp"
-                      android:text="@string/galeria" />
-              </LinearLayout>
-
-              <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-                  android:id="@+id/swipe"
-                  android:layout_width="match_parent"
-                  android:layout_height="0dp"
-                  android:layout_weight="1">
-
-                  <androidx.recyclerview.widget.RecyclerView
-                      android:id="@+id/lista"
-                      android:layout_width="match_parent"
-                      android:layout_height="match_parent"
-                      android:padding="8dp"
-                      android:clipToPadding="false" />
-              </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
-
-              <TextView
-                  android:id="@+id/vacio"
-                  android:layout_width="match_parent"
-                  android:layout_height="wrap_content"
-                  android:padding="16dp"
-                  android:gravity="center"
-                  android:text="@string/carpeta_vacia"
-                  android:visibility="gone" />
-          </LinearLayout>
-          EOF
-
-      - name: item_archivo.xml
-        run: |
-          cat > app/src/main/res/layout/item_archivo.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              android:layout_width="match_parent"
-              android:layout_height="wrap_content"
-              android:orientation="horizontal"
-              android:padding="12dp"
-              android:gravity="center_vertical"
-              android:background="?attr/selectableItemBackground"
-              android:clickable="true"
-              android:focusable="true">
-
-              <ImageView
-                  android:id="@+id/icono"
-                  android:layout_width="48dp"
-                  android:layout_height="48dp"
-                  android:scaleType="centerCrop"
-                  android:src="@android:drawable/ic_menu_gallery" />
-
-              <LinearLayout
-                  android:layout_width="0dp"
-                  android:layout_height="wrap_content"
-                  android:layout_weight="1"
-                  android:orientation="vertical"
-                  android:paddingStart="12dp"
-                  android:paddingEnd="12dp">
-
-                  <TextView
-                      android:id="@+id/nombre"
-                      android:layout_width="match_parent"
-                      android:layout_height="wrap_content"
-                      android:textSize="16sp"
-                      android:textStyle="bold"
-                      android:maxLines="1"
-                      android:ellipsize="middle" />
-
-                  <TextView
-                      android:id="@+id/detalle"
-                      android:layout_width="match_parent"
-                      android:layout_height="wrap_content"
-                      android:textSize="12sp"
-                      android:textColor="@color/gris" />
-              </LinearLayout>
-
-              <TextView
-                  android:id="@+id/menuPuntos"
-                  android:layout_width="40dp"
-                  android:layout_height="40dp"
-                  android:gravity="center"
-                  android:text="⋮"
-                  android:textSize="24sp" />
-          </LinearLayout>
-          EOF
-
-      - name: item_imagen.xml
-        run: |
-          cat > app/src/main/res/layout/item_imagen.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              android:layout_width="match_parent"
-              android:layout_height="160dp"
-              android:layout_margin="4dp">
-
-              <ImageView
-                  android:id="@+id/imagen"
-                  android:layout_width="match_parent"
-                  android:layout_height="match_parent"
-                  android:scaleType="centerCrop"
-                  android:background="#DDDDDD" />
-
-              <TextView
-                  android:id="@+id/nombreImagen"
-                  android:layout_width="match_parent"
-                  android:layout_height="wrap_content"
-                  android:layout_gravity="bottom"
-                  android:background="#99000000"
-                  android:padding="4dp"
-                  android:textColor="#FFFFFF"
-                  android:textSize="11sp"
-                  android:maxLines="1"
-                  android:ellipsize="middle" />
-          </FrameLayout>
-          EOF
-
-      - name: activity_visor.xml
-        run: |
-          cat > app/src/main/res/layout/activity_visor.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:background="#000000">
-
-              <ImageView
-                  android:id="@+id/imagenGrande"
-                  android:layout_width="match_parent"
-                  android:layout_height="match_parent"
-                  android:scaleType="fitCenter" />
-
-              <TextView
-                  android:id="@+id/nombreVisor"
-                  android:layout_width="match_parent"
-                  android:layout_height="wrap_content"
-                  android:layout_gravity="top"
-                  android:background="#99000000"
-                  android:padding="12dp"
-                  android:textColor="#FFFFFF"
-                  android:textSize="14sp" />
+                  android:text="@string/app_name"
+                  android:textSize="22sp"
+                  android:textStyle="bold"
+                  android:gravity="center" />
 
               <Button
-                  android:id="@+id/btnCerrar"
-                  android:layout_width="wrap_content"
+                  android:id="@+id/btnInterno"
+                  android:layout_width="match_parent"
                   android:layout_height="wrap_content"
-                  android:layout_gravity="bottom|center_horizontal"
-                  android:layout_margin="16dp"
-                  android:text="@string/atras" />
-          </FrameLayout>
+                  android:layout_marginTop="16dp"
+                  android:text="Ver almacenamiento interno" />
+
+              <Button
+                  android:id="@+id/btnExterno"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_marginTop="8dp"
+                  android:text="Ver almacenamiento externo" />
+
+              <TextView
+                  android:id="@+id/resultado"
+                  android:layout_width="match_parent"
+                  android:layout_height="0dp"
+                  android:layout_weight="1"
+                  android:layout_marginTop="16dp"
+                  android:padding="12dp"
+                  android:background="#F0F0F0"
+                  android:textSize="13sp"
+                  android:scrollbars="vertical"
+                  android:text="Presiona un boton para ver el contenido" />
+          </LinearLayout>
           EOF
 
-      - name: icono mipmap
+      - name: icono
         run: |
           cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -514,235 +237,6 @@ jobs:
               <background android:drawable="@color/azul"/>
               <foreground android:drawable="@color/celeste"/>
           </adaptive-icon>
-          EOF
-
-      - name: ArchivoUtil.kt
-        run: |
-          cat > app/src/main/java/com/mangauniversal/app/ArchivoUtil.kt << 'EOF'
-          package com.mangauniversal.app
-
-          import android.content.Context
-          import android.net.Uri
-          import android.os.Environment
-          import java.io.File
-          import java.text.DecimalFormat
-
-          object ArchivoUtil {
-
-              fun dirInterno(context: Context): File = context.filesDir
-
-              fun dirExterno(): File = Environment.getExternalStorageDirectory()
-
-              fun tamanioLegible(bytes: Long): String {
-                  if (bytes <= 0) return "0 B"
-                  val unidades = arrayOf("B", "KB", "MB", "GB", "TB")
-                  val digito = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
-                  val valor = bytes / Math.pow(1024.0, digito.toDouble())
-                  return DecimalFormat("#,##0.#").format(valor) + " " + unidades[digito]
-              }
-
-              fun esImagen(nombre: String): Boolean {
-                  val ext = nombre.substringAfterLast('.', "").lowercase()
-                  return ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
-              }
-
-              fun esVideo(nombre: String): Boolean {
-                  val ext = nombre.substringAfterLast('.', "").lowercase()
-                  return ext in listOf("mp4", "mkv", "avi", "mov", "webm", "3gp")
-              }
-
-              fun esAudio(nombre: String): Boolean {
-                  val ext = nombre.substringAfterLast('.', "").lowercase()
-                  return ext in listOf("mp3", "wav", "ogg", "m4a", "flac", "aac")
-              }
-
-              fun esDocumento(nombre: String): Boolean {
-                  val ext = nombre.substringAfterLast('.', "").lowercase()
-                  return ext in listOf("pdf", "doc", "docx", "txt", "xls", "xlsx", "ppt", "pptx", "epub")
-              }
-
-              fun eliminar(archivo: File): Boolean {
-                  return try {
-                      if (archivo.isDirectory) archivo.deleteRecursively()
-                      else archivo.delete()
-                  } catch (e: Exception) {
-                      false
-                  }
-              }
-
-              fun copiar(origen: File, destino: File): Boolean {
-                  return try {
-                      if (origen.isDirectory) {
-                          destino.mkdirs()
-                          origen.listFiles()?.forEach { hijo ->
-                              copiar(hijo, File(destino, hijo.name))
-                          }
-                          true
-                      } else {
-                          destino.parentFile?.mkdirs()
-                          origen.inputStream().use { entrada ->
-                              destino.outputStream().use { salida ->
-                                  entrada.copyTo(salida)
-                              }
-                          }
-                          true
-                      }
-                  } catch (e: Exception) {
-                      false
-                  }
-              }
-
-              fun mover(origen: File, destino: File): Boolean {
-                  return try {
-                      if (origen.renameTo(destino)) true
-                      else {
-                          if (copiar(origen, destino)) {
-                              eliminar(origen)
-                          } else false
-                      }
-                  } catch (e: Exception) {
-                      false
-                  }
-              }
-          }
-          EOF
-
-      - name: ArchivoAdapter.kt
-        run: |
-          cat > app/src/main/java/com/mangauniversal/app/ArchivoAdapter.kt << 'EOF'
-          package com.mangauniversal.app
-
-          import android.view.LayoutInflater
-          import android.view.View
-          import android.view.ViewGroup
-          import android.widget.ImageView
-          import android.widget.TextView
-          import androidx.recyclerview.widget.RecyclerView
-          import java.io.File
-
-          class ArchivoAdapter(
-              private val archivos: MutableList<File>,
-              private val onClick: (File) -> Unit,
-              private val onMenu: (File, View) -> Unit
-          ) : RecyclerView.Adapter<ArchivoAdapter.Vista>() {
-
-              class Vista(v: View) : RecyclerView.ViewHolder(v) {
-                  val icono: ImageView = v.findViewById(R.id.icono)
-                  val nombre: TextView = v.findViewById(R.id.nombre)
-                  val detalle: TextView = v.findViewById(R.id.detalle)
-                  val menu: TextView = v.findViewById(R.id.menuPuntos)
-              }
-
-              override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Vista {
-                  val v = LayoutInflater.from(parent.context)
-                      .inflate(R.layout.item_archivo, parent, false)
-                  return Vista(v)
-              }
-
-              override fun onBindViewHolder(holder: Vista, position: Int) {
-                  val f = archivos[position]
-                  holder.nombre.text = f.name
-                  holder.detalle.text = if (f.isDirectory) {
-                      "Carpeta"
-                  } else {
-                      ArchivoUtil.tamanioLegible(f.length())
-                  }
-
-                  holder.icono.setImageResource(
-                      when {
-                          f.isDirectory -> android.R.drawable.ic_menu_directions
-                          ArchivoUtil.esImagen(f.name) -> android.R.drawable.ic_menu_gallery
-                          ArchivoUtil.esVideo(f.name) -> android.R.drawable.ic_menu_slideshow
-                          ArchivoUtil.esAudio(f.name) -> android.R.drawable.ic_lock_silent_mode_off
-                          else -> android.R.drawable.ic_menu_agenda
-                      }
-                  )
-
-                  holder.itemView.setOnClickListener { onClick(f) }
-                  holder.menu.setOnClickListener { v -> onMenu(f, v) }
-              }
-
-              override fun getItemCount(): Int = archivos.size
-          }
-          EOF
-
-      - name: ImagenAdapter.kt
-        run: |
-          cat > app/src/main/java/com/mangauniversal/app/ImagenAdapter.kt << 'EOF'
-          package com.mangauniversal.app
-
-          import android.view.LayoutInflater
-          import android.view.View
-          import android.view.ViewGroup
-          import android.widget.ImageView
-          import android.widget.TextView
-          import androidx.recyclerview.widget.RecyclerView
-          import coil.load
-          import java.io.File
-
-          class ImagenAdapter(
-              private val imagenes: List<File>,
-              private val onClick: (File) -> Unit
-          ) : RecyclerView.Adapter<ImagenAdapter.Vista>() {
-
-              class Vista(v: View) : RecyclerView.ViewHolder(v) {
-                  val imagen: ImageView = v.findViewById(R.id.imagen)
-                  val nombre: TextView = v.findViewById(R.id.nombreImagen)
-              }
-
-              override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Vista {
-                  val v = LayoutInflater.from(parent.context)
-                      .inflate(R.layout.item_imagen, parent, false)
-                  return Vista(v)
-              }
-
-              override fun onBindViewHolder(holder: Vista, position: Int) {
-                  val f = imagenes[position]
-                  holder.imagen.load(f) {
-                      crossfade(true)
-                  }
-                  holder.nombre.text = f.name
-                  holder.itemView.setOnClickListener { onClick(f) }
-              }
-
-              override fun getItemCount(): Int = imagenes.size
-          }
-          EOF
-
-      - name: VisorActivity.kt
-        run: |
-          cat > app/src/main/java/com/mangauniversal/app/VisorActivity.kt << 'EOF'
-          package com.mangauniversal.app
-
-          import android.os.Bundle
-          import android.widget.Button
-          import android.widget.ImageView
-          import android.widget.TextView
-          import androidx.appcompat.app.AppCompatActivity
-          import coil.load
-          import java.io.File
-
-          class VisorActivity : AppCompatActivity() {
-
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  setContentView(R.layout.activity_visor)
-
-                  val ruta = intent.getStringExtra("ruta") ?: return
-                  val archivo = File(ruta)
-
-                  val imagen: ImageView = findViewById(R.id.imagenGrande)
-                  val nombre: TextView = findViewById(R.id.nombreVisor)
-                  val boton: Button = findViewById(R.id.btnCerrar)
-
-                  nombre.text = archivo.name
-                  imagen.load(archivo) {
-                      crossfade(true)
-                  }
-
-                  boton.setOnClickListener { finish() }
-              }
-          }
           EOF
 
       - name: MainActivity.kt
@@ -758,42 +252,27 @@ jobs:
           import android.os.Bundle
           import android.os.Environment
           import android.provider.Settings
-          import android.view.LayoutInflater
-          import android.view.View
-          import android.widget.EditText
-          import android.widget.PopupMenu
+          import android.widget.Button
           import android.widget.TextView
           import android.widget.Toast
           import androidx.activity.result.contract.ActivityResultContracts
           import androidx.appcompat.app.AlertDialog
           import androidx.appcompat.app.AppCompatActivity
           import androidx.core.content.ContextCompat
-          import androidx.recyclerview.widget.GridLayoutManager
-          import androidx.recyclerview.widget.LinearLayoutManager
-          import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-          import androidx.recyclerview.widget.RecyclerView
-          import com.google.android.material.appbar.MaterialToolbar
           import java.io.File
+          import java.text.DecimalFormat
 
           class MainActivity : AppCompatActivity() {
 
-              private lateinit var lista: RecyclerView
-              private lateinit var vacio: TextView
-              private lateinit var rutaActual: TextView
-              private lateinit var swipe: SwipeRefreshLayout
-              private lateinit var toolbar: MaterialToolbar
-
-              private var carpetaActual: File = Environment.getExternalStorageDirectory()
-              private var enGaleria: Boolean = false
+              private lateinit var resultado: TextView
 
               private val pedirPermiso = registerForActivityResult(
                   ActivityResultContracts.RequestMultiplePermissions()
-              ) { resultado ->
-                  val concedido = resultado.values.any { it }
-                  if (concedido) {
-                      cargarCarpeta(carpetaActual)
+              ) { permisos ->
+                  if (permisos.values.any { it }) {
+                      Toast.makeText(this, "Permiso concedido", Toast.LENGTH_SHORT).show()
                   } else {
-                      Toast.makeText(this, "Sin permisos no puedo mostrar archivos", Toast.LENGTH_LONG).show()
+                      Toast.makeText(this, "Permiso denegado", Toast.LENGTH_LONG).show()
                   }
               }
 
@@ -801,119 +280,108 @@ jobs:
                   super.onCreate(savedInstanceState)
                   setContentView(R.layout.activity_main)
 
-                  lista = findViewById(R.id.lista)
-                  vacio = findViewById(R.id.vacio)
-                  rutaActual = findViewById(R.id.rutaActual)
-                  swipe = findViewById(R.id.swipe)
-                  toolbar = findViewById(R.id.toolbar)
+                  resultado = findViewById(R.id.resultado)
 
-                  setSupportActionBar(toolbar)
-
-                  swipe.setOnRefreshListener {
-                      if (enGaleria) cargarGaleria() else cargarCarpeta(carpetaActual)
+                  findViewById<Button>(R.id.btnInterno).setOnClickListener {
+                      listar(filesDir, "Almacenamiento interno")
                   }
 
-                  findViewById<View>(R.id.btnInterno).setOnClickListener {
-                      enGaleria = false
-                      carpetaActual = filesDir
-                      cargarCarpeta(carpetaActual)
+                  findViewById<Button>(R.id.btnExterno).setOnClickListener {
+                      verificarYPedirPermiso()
                   }
 
-                  findViewById<View>(R.id.btnExterno).setOnClickListener {
-                      enGaleria = false
-                      carpetaActual = Environment.getExternalStorageDirectory()
-                      cargarCarpeta(carpetaActual)
-                  }
-
-                  findViewById<View>(R.id.btnGaleria).setOnClickListener {
-                      enGaleria = true
-                      cargarGaleria()
-                  }
-
-                  pedirPermisos()
+                  verificarPermisoInicial()
               }
 
-              private fun pedirPermisos() {
+              private fun verificarPermisoInicial() {
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                       if (!Environment.isExternalStorageManager()) {
                           AlertDialog.Builder(this)
-                              .setTitle(R.string.permiso_titulo)
-                              .setMessage(R.string.permiso_mensaje)
-                              .setCancelable(false)
-                              .setPositiveButton(R.string.permiso_boton) { _, _ ->
+                              .setTitle("Permiso necesario")
+                              .setMessage("Para acceder a tus archivos, acepta el permiso en la siguiente pantalla.")
+                              .setPositiveButton("Dar permiso") { _, _ ->
                                   try {
-                                      val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                                      intent.data = Uri.parse("package:$packageName")
-                                      startActivity(intent)
+                                      val i = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                                      i.data = Uri.parse("package:$packageName")
+                                      startActivity(i)
                                   } catch (e: Exception) {
                                       startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
                                   }
                               }
-                              .setNegativeButton(R.string.cancelar) { _, _ -> }
+                              .setNegativeButton("Cancelar", null)
                               .show()
-                      } else {
-                          cargarCarpeta(carpetaActual)
                       }
                   } else {
                       val permisos = mutableListOf<String>()
                       if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
                           != PackageManager.PERMISSION_GRANTED) {
                           permisos.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                      }
-                      if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                          != PackageManager.PERMISSION_GRANTED) {
                           permisos.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                       }
-                      if (permisos.isEmpty()) cargarCarpeta(carpetaActual)
-                      else pedirPermiso.launch(permisos.toTypedArray())
+                      if (permisos.isNotEmpty()) pedirPermiso.launch(permisos.toTypedArray())
                   }
               }
 
-              override fun onResume() {
-                  super.onResume()
+              private fun verificarYPedirPermiso() {
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                       if (Environment.isExternalStorageManager()) {
-                          if (enGaleria) cargarGaleria() else cargarCarpeta(carpetaActual)
+                          listar(Environment.getExternalStorageDirectory(), "Almacenamiento externo")
+                      } else {
+                          verificarPermisoInicial()
+                      }
+                  } else {
+                      listar(Environment.getExternalStorageDirectory(), "Almacenamiento externo")
+                  }
+              }
+
+              private fun listar(dir: File, titulo: String) {
+                  val sb = StringBuilder()
+                  sb.append("Almacenamiento: ").append(titulo).append("\n")
+                  sb.append("Ruta: ").append(dir.absolutePath).append("\n\n")
+
+                  val archivos = dir.listFiles()
+                  if (archivos == null || archivos.isEmpty()) {
+                      sb.append("(carpeta vacia o sin acceso)")
+                  } else {
+                      val ordenados = archivos.sortedWith(
+                          compareByDescending<File> { it.isDirectory }.thenBy { it.name.lowercase() }
+                      )
+                      for (f in ordenados.take(80)) {
+                          val icono = if (f.isDirectory) "[DIR]" else "[FILE]"
+                          val peso = if (f.isDirectory) "" else " (" + tamanio(f.length()) + ")"
+                          sb.append(icono).append(" ").append(f.name).append(peso).append("\n")
+                      }
+                      if (ordenados.size > 80) {
+                          sb.append("\n... y ").append(ordenados.size - 80).append(" mas")
                       }
                   }
+
+                  resultado.text = sb.toString()
               }
 
-              private fun cargarCarpeta(dir: File) {
-                  carpetaActual = dir
-                  enGaleria = false
-                  rutaActual.text = dir.absolutePath
-                  val archivos = dir.listFiles()?.sortedWith(
-                      compareByDescending<File> { it.isDirectory }.thenBy { it.name.lowercase() }
-                  ) ?: emptyList()
-
-                  vacio.visibility = if (archivos.isEmpty()) View.VISIBLE else View.GONE
-
-                  lista.layoutManager = LinearLayoutManager(this)
-                  lista.adapter = ArchivoAdapter(archivos.toMutableList(),
-                      onClick = { f ->
-                          if (f.isDirectory) cargarCarpeta(f)
-                          else abrirArchivo(f)
-                      },
-                      onMenu = { f, v -> mostrarMenu(f, v) }
-                  )
-                  swipe.isRefreshing = false
+              private fun tamanio(bytes: Long): String {
+                  if (bytes <= 0) return "0 B"
+                  val u = arrayOf("B", "KB", "MB", "GB")
+                  val d = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
+                  val v = bytes / Math.pow(1024.0, d.toDouble())
+                  return DecimalFormat("#,##0.#").format(v) + " " + u[d]
               }
+          }
+          EOF
 
-              private fun cargarGaleria() {
-                  enGaleria = true
-                  rutaActual.text = getString(R.string.galeria)
-                  val raiz = Environment.getExternalStorageDirectory()
-                  val imagenes = mutableListOf<File>()
-                  raiz.walkTopDown().maxDepth(6).forEach {
-                      if (it.isFile && ArchivoUtil.esImagen(it.name)) imagenes.add(it)
-                  }
+      - name: Compilar APK
+        run: gradle assembleDebug --no-daemon --stacktrace
 
-                  vacio.visibility = if (imagenes.isEmpty()) View.VISIBLE else View.GONE
+      - name: Verificar que el APK existe
+        run: |
+          echo "=== Buscando APK ==="
+          find . -name "*.apk" -type f
+          echo "=== Contenido de app/build/outputs ==="
+          ls -la app/build/outputs/apk/debug/ || true
 
-                  lista.layoutManager = GridLayoutManager(this, 3)
-                  lista.adapter = ImagenAdapter(imagenes) { f ->
-                      val i = Intent(this, VisorActivity::class.java)
-                      i.putExtra("ruta", f.absolutePath)
-                      startActivity(i)
-                  }
-                  swipe.isRefreshing
+      - name: Subir APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestorArchivos-APK
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
