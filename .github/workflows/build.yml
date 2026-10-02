@@ -1,4 +1,4 @@
-name: Inspeccionar Lumi
+name: Ver archivos clave de Lumi
 
 on:
   push:
@@ -14,41 +14,38 @@ jobs:
         run: |
           git clone https://github.com/AmiiGood/Lumi.git lumi
 
-      - name: Ver estructura
+      - name: Mostrar WebtoonReader.kt
         run: |
-          echo "=== CARPETAS ==="
-          find lumi -type d | head -60
-          echo ""
-          echo "=== ARCHIVOS KOTLIN ==="
-          find lumi -name "*.kt" | head -100
-          echo ""
-          echo "=== BUSCAR WEBTOON ==="
-          find lumi -iname "*webtoon*" -o -iname "*viewer*" -o -iname "*reader*" -o -iname "*scroll*"
+          echo "========================================"
+          echo "=== WebtoonReader.kt COMPLETO ==="
+          echo "========================================"
+          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/WebtoonReader.kt"
 
-      - name: Buscar codigo de scroll
+      - name: Mostrar ReaderScreen.kt
         run: |
-          echo "=== ARCHIVOS CON autoScroll ==="
-          grep -rl "autoScroll" lumi --include="*.kt" 2>/dev/null || echo "no encontrado"
-          echo ""
-          echo "=== ARCHIVOS CON scrollBy ==="
-          grep -rl "scrollBy\|animateScroll" lumi --include="*.kt" 2>/dev/null || echo "no encontrado"
-          echo ""
-          echo "=== ARCHIVOS CON webtoon ==="
-          grep -rl "webtoon\|Webtoon" lumi --include="*.kt" 2>/dev/null || echo "no encontrado"
+          echo "========================================"
+          echo "=== ReaderScreen.kt COMPLETO ==="
+          echo "========================================"
+          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/ReaderScreen.kt"
 
-      - name: Copiar archivos clave
+      - name: Mostrar ReadingMode.kt
         run: |
-          mkdir -p info
-          find lumi -name "*.kt" > info/lista_kotlin.txt
-          find lumi -iname "*webtoon*" -exec cp {} info/ \; 2>/dev/null || true
-          find lumi -iname "*viewer*" -exec cp {} info/ \; 2>/dev/null || true
-          find lumi -iname "*reader*" -exec cp {} info/ \; 2>/dev/null || true
-          grep -r "autoScroll\|scrollBy\|webtoon\|speed" lumi --include="*.kt" > info/codigo_scroll.txt 2>/dev/null || true
-          ls -la info/
+          echo "========================================"
+          echo "=== ReadingMode.kt COMPLETO ==="
+          echo "========================================"
+          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/model/ReadingMode.kt"
 
-      - name: Subir informacion
+      - name: Copiar archivos a artifact
+        run: |
+          mkdir -p archivos_clave
+          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/WebtoonReader.kt" archivos_clave/
+          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/ReaderScreen.kt" archivos_clave/
+          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/model/ReadingMode.kt" archivos_clave/
+          ls -la archivos_clave/
+
+      - name: Subir archivos clave
         uses: actions/upload-artifact@v4
         with:
-          name: info-lumi
-          path: info/
-          if-no-files-found: warn
+          name: archivos-clave-lumi
+          path: archivos_clave/
+          if-no-files-found: error
