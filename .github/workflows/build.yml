@@ -1,4 +1,4 @@
-name: Compilar Lumi con carpetas de imagenes v2
+name: Compilar Lumi carpetas imagenes v3
 
 on:
   push:
@@ -33,7 +33,7 @@ jobs:
             fi
           fi
 
-      - name: Reemplazar MediaFormat (anadir IMAGE_FOLDER)
+      - name: Reemplazar MediaItem.kt
         run: |
           cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/model/MediaItem.kt" << 'KOTLIN_EOF'
           package io.github.amiigood.lumi.lumi.data.model
@@ -126,7 +126,7 @@ jobs:
           }
           KOTLIN_EOF
 
-      - name: Reemplazar LibraryScanner.kt (usar IMAGE_FOLDER)
+      - name: Reemplazar LibraryScanner.kt
         run: |
           cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/scanner/LibraryScanner.kt" << 'KOTLIN_EOF'
           package io.github.amiigood.lumi.lumi.data.scanner
@@ -284,7 +284,7 @@ jobs:
           }
           KOTLIN_EOF
 
-      - name: Reemplazar PageExtractor.kt (leer carpetas)
+      - name: Reemplazar PageExtractor.kt
         run: |
           cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/reader/PageExtractor.kt" << 'KOTLIN_EOF'
           package io.github.amiigood.lumi.lumi.data.reader
@@ -348,8 +348,6 @@ jobs:
                       ?: return emptyList()
 
                   val files = mutableListOf<File>()
-
-                  // Si es una carpeta, listar sus hijos
                   val children = docFolder.listFiles()
                   for (child in children) {
                       if (!child.isFile) continue
@@ -366,7 +364,6 @@ jobs:
                               files.add(out)
                           }
                       } catch (e: Exception) {
-                          // Ignorar imagen que no se pudo copiar
                       }
                   }
 
@@ -470,7 +467,7 @@ jobs:
           class UnsupportedRarException : Exception("RAR5 no soportado. Convierte el archivo a CBZ o RAR4.")
           KOTLIN_EOF
 
-      - name: Reemplazar ReaderViewModel.kt (anadir IMAGE_FOLDER)
+      - name: Reemplazar ReaderViewModel.kt
         run: |
           cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/ReaderViewModel.kt" << 'KOTLIN_EOF'
           package io.github.amiigood.lumi.lumi.ui.reader
@@ -659,6 +656,61 @@ jobs:
               }
           }
           KOTLIN_EOF
+
+      - name: Parchear CoverManager.kt (anadir IMAGE_FOLDER y else)
+        run: |
+          COVER_FILE="lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/parser/CoverManager.kt"
+          echo "=== Contenido original de CoverManager.kt ==="
+          cat "$COVER_FILE"
+          
+          # Crear version parcheada que anade else a todos los when
+          cat > "$COVER_FILE" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.data.parser
+
+          import android.content.Context
+          import android.net.Uri
+          import io.github.amiigood.lumi.lumi.data.model.MediaFormat
+          import dagger.hilt.android.qualifiers.ApplicationContext
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import java.io.File
+          import javax.inject.Inject
+          import javax.inject.Singleton
+
+          @Singleton
+          class CoverManager @Inject constructor(
+              @ApplicationContext private val context: Context,
+              private val cbzParser: CbzParser,
+              private val cbrParser: CbrParser,
+              private val epubParser: EpubParser,
+              private val pdfParser: PdfParser
+          ) {
+
+              suspend fun extractCover(itemId: String, uri: Uri, format: MediaFormat): File? = withContext(Dispatchers.IO) {
+                  val output = File(context.cacheDir, "covers/$itemId.jpg")
+                  output.parentFile?.mkdirs()
+                  if (output.exists() && output.length() > 0) return@withContext output
+
+                  val parser: MediaParser = when (format) {
+                      MediaFormat.CBZ -> cbzParser
+                      MediaFormat.CBR -> cbrParser
+                      MediaFormat.EPUB -> epubParser
+                      MediaFormat.PDF -> pdfParser
+                      else -> return@withContext null
+                  }
+
+                  val ok = try {
+                      parser.extractCover(uri, output)
+                  } catch (e: Exception) {
+                      false
+                  }
+                  if (ok && output.exists() && output.length() > 0) output else null
+              }
+          }
+          KOTLIN_EOF
+          
+          echo "=== Contenido nuevo de CoverManager.kt ==="
+          cat "$COVER_FILE"
 
       - name: Compilar APK
         run: |
