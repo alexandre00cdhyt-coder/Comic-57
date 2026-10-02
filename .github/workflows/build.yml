@@ -1,4 +1,4 @@
-name: Ver archivos clave de Lumi
+name: Compilar Lumi con soporte de carpetas de imagenes
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  inspect:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,57 +14,295 @@ jobs:
         run: |
           git clone https://github.com/AmiiGood/Lumi.git lumi
 
-      - name: MainActivity.kt
-        run: |
-          echo "========== MainActivity.kt =========="
-          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/MainActivity.kt"
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-      - name: LumiNavHost.kt
-        run: |
-          echo "========== LumiNavHost.kt =========="
-          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/navigation/LumiNavHost.kt"
+      - name: Dar permisos a gradlew
+        run: chmod +x lumi/gradlew
 
-      - name: LumiDestinations.kt
+      - name: Anadir coil-gif al build.gradle
         run: |
-          echo "========== LumiDestinations.kt =========="
-          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/navigation/LumiDestinations.kt"
+          cd lumi
+          GRADLE_FILE=$(find . -name "build.gradle" -path "*/app/*" | head -1)
+          echo "Archivo: $GRADLE_FILE"
+          if [ -n "$GRADLE_FILE" ]; then
+            # Anadir coil-gif despues de coil si no esta
+            if ! grep -q "coil-gif" "$GRADLE_FILE"; then
+              sed -i 's|implementation.*coil.*|&\n    implementation "io.coil-kt:coil-gif:2.5.0"|' "$GRADLE_FILE"
+            fi
+            echo "=== Dependencias coil ==="
+            grep -i coil "$GRADLE_FILE"
+          fi
 
-      - name: LibraryScanner.kt
+      - name: Reemplazar FormatDetector.kt (anadir IMAGE_FOLDER)
         run: |
-          echo "========== LibraryScanner.kt =========="
-          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/scanner/LibraryScanner.kt"
+          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/util/FormatDetector.kt" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.util
 
-      - name: LumiDatabase.kt
+          import io.github.amiigood.lumi.lumi.data.model.MediaFormat
+          import io.github.amiigood.lumi.lumi.data.model.MediaType
+
+          object FormatDetector {
+
+              val imageExtensions = listOf(
+                  ".jpg", ".jpeg", ".png", ".gif", ".webp",
+                  ".bmp", ".avif", ".heic", ".heif", ".tiff", ".tif"
+              )
+
+              fun isImageFile(fileName: String): Boolean {
+                  val lower = fileName.lowercase()
+                  return imageExtensions.any { lower.endsWith(it) }
+              }
+
+              fun detectFormat(fileName: String): MediaFormat? {
+                  val lower = fileName.lowercase()
+                  return when {
+                      lower.endsWith(".cbz") -> MediaFormat.CBZ
+                      lower.endsWith(".cbr") -> MediaFormat.CBR
+                      lower.endsWith(".zip") -> MediaFormat.CBZ
+                      lower.endsWith(".rar") -> MediaFormat.CBR
+                      lower.endsWith(".epub") -> MediaFormat.EPUB
+                      lower.endsWith(".pdf") -> MediaFormat.PDF
+                      else -> null
+                  }
+              }
+
+              fun inferTypeFromPath(parentFolders: List<String>, format: MediaFormat): MediaType {
+                  val joined = parentFolders.joinToString("/").lowercase()
+                  return when {
+                      joined.contains("manga") -> MediaType.MANGA
+                      joined.contains("comic") -> MediaType.COMIC
+                      joined.contains("manhwa") -> MediaType.MANGA
+                      joined.contains("manhua") -> MediaType.MANGA
+                      joined.contains("libro") || joined.contains("book") -> MediaType.BOOK
+                      format == MediaFormat.EPUB -> MediaType.BOOK
+                      format == MediaFormat.CBZ || format == MediaFormat.CBR -> MediaType.COMIC
+                      else -> MediaType.UNKNOWN
+                  }
+              }
+          }
+          KOTLIN_EOF
+
+      - name: Reemplazar LibraryScanner.kt (detectar carpetas de imagenes)
         run: |
-          echo "========== LumiDatabase.kt =========="
-          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/local/LumiDatabase.kt"
+          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/scanner/LibraryScanner.kt" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.data.scanner
 
-      - name: MediaItemDao.kt
+          import android.content.Context
+          import android.net.Uri
+          import androidx.documentfile.provider.DocumentFile
+          import io.github.amiigood.lumi.lumi.data.model.MediaFormat
+          import io.github.amiigood.lumi.lumi.data.model.MediaItem
+          import io.github.amiigood.lumi.lumi.data.parser.CbrParser
+          import io.github.amiigood.lumi.lumi.data.parser.CbzParser
+          import io.github.amiigood.lumi.lumi.data.parser.EpubParser
+          import io.github.amiigood.lumi.lumi.data.parser.MediaParser
+          import io.github.amiigood.lumi.lumi.data.parser.PdfParser
+          import io.github.amiigood.lumi.lumi.util.FormatDetector
+          import dagger.hilt.android.qualifiers.ApplicationContext
+          import io.github.amiigood.lumi.lumi.data.model.ItemMetadata
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import java.security.MessageDigest
+          import javax.inject.Inject
+          import javax.inject.Singleton
+          import kotlinx.coroutines.ensureActive
+          import kotlin.coroutines.coroutineContext
+
+          private data class ScannedFile(
+              val docFile: DocumentFile,
+              val format: MediaFormat,
+              val parentFolders: List<String>
+          )
+
+          private data class ScannedFolder(
+              val docFolder: DocumentFile,
+              val imageCount: Int,
+              val parentFolders: List<String>
+          )
+
+          @Singleton
+          class LibraryScanner @Inject constructor(
+              @ApplicationContext private val context: Context,
+              private val cbzParser: CbzParser,
+              private val cbrParser: CbrParser,
+              private val epubParser: EpubParser,
+              private val pdfParser: PdfParser
+          ) {
+
+              suspend fun scan(rootUri: Uri): List<MediaItem> = withContext(Dispatchers.IO) {
+                  val root = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext emptyList()
+                  val scannedFiles = mutableListOf<ScannedFile>()
+                  val scannedFolders = mutableListOf<ScannedFolder>()
+                  walk(root, emptyList(), scannedFiles, scannedFolders)
+
+                  val itemsFromFiles = scannedFiles.map { it.toMediaItem() }
+                  val itemsFromFolders = scannedFolders.map { it.toFolderMediaItem() }
+                  itemsFromFiles + itemsFromFolders
+              }
+
+              private suspend fun walk(
+                  dir: DocumentFile,
+                  parents: List<String>,
+                  filesOut: MutableList<ScannedFile>,
+                  foldersOut: MutableList<ScannedFolder>
+              ) {
+                  coroutineContext.ensureActive()
+                  val children = dir.listFiles()
+                  var imageCount = 0
+                  var subfolderCount = 0
+
+                  for (child in children) {
+                      coroutineContext.ensureActive()
+                      when {
+                          child.isDirectory -> {
+                              subfolderCount++
+                              val newParents = parents + (child.name ?: "")
+                              walk(child, newParents, filesOut, foldersOut)
+                          }
+                          child.isFile -> {
+                              val name = child.name ?: continue
+                              if (FormatDetector.isImageFile(name)) {
+                                  imageCount++
+                              }
+                              val format = FormatDetector.detectFormat(name) ?: continue
+                              filesOut.add(ScannedFile(child, format, parents))
+                          }
+                      }
+                  }
+
+                  // Si la carpeta tiene imagenes y NO subcarpetas, tratarla como un comic
+                  if (imageCount > 0 && subfolderCount == 0 && parents.isNotEmpty()) {
+                      foldersOut.add(ScannedFolder(dir, imageCount, parents))
+                  }
+              }
+
+              private suspend fun ScannedFile.toMediaItem(): MediaItem {
+                  coroutineContext.ensureActive()
+                  val name = docFile.name ?: "Untitled"
+                  val fallbackTitle = name.substringBeforeLast('.')
+                  val type = FormatDetector.inferTypeFromPath(parentFolders, format)
+                  val parser: MediaParser = when (format) {
+                      MediaFormat.CBZ -> cbzParser
+                      MediaFormat.CBR -> cbrParser
+                      MediaFormat.EPUB -> epubParser
+                      MediaFormat.PDF -> pdfParser
+                  }
+
+                  val parsed = runCatching { parser.extractMetadata(docFile.uri) }
+                      .getOrNull()
+
+                  val collection = parsed?.extra?.series ?: parentFolders.lastOrNull()
+
+                  return MediaItem(
+                      id = hashId(docFile.uri.toString()),
+                      title = parsed?.title ?: fallbackTitle,
+                      author = parsed?.author,
+                      coverPath = null,
+                      filePath = docFile.uri.toString(),
+                      format = format,
+                      type = type,
+                      collection = collection,
+                      pageCount = parsed?.pageCount ?: 0,
+                      currentPage = 0,
+                      lastReadAt = null,
+                      addedAt = System.currentTimeMillis(),
+                      metadata = parsed?.extra ?: ItemMetadata()
+                  )
+              }
+
+              private suspend fun ScannedFolder.toFolderMediaItem(): MediaItem {
+                  coroutineContext.ensureActive()
+                  val folderName = docFolder.name ?: "Carpeta"
+                  val type = FormatDetector.inferTypeFromPath(parentFolders, MediaFormat.CBZ)
+                  val collection = parentFolders.lastOrNull()
+
+                  return MediaItem(
+                      id = hashId(docFolder.uri.toString()),
+                      title = folderName,
+                      author = null,
+                      coverPath = null,
+                      filePath = docFolder.uri.toString(),
+                      format = MediaFormat.CBZ,
+                      type = type,
+                      collection = collection,
+                      pageCount = imageCount,
+                      currentPage = 0,
+                      lastReadAt = null,
+                      addedAt = System.currentTimeMillis(),
+                      metadata = ItemMetadata()
+                  )
+              }
+
+              private fun hashId(input: String): String {
+                  val bytes = MessageDigest.getInstance("SHA-1").digest(input.toByteArray())
+                  return bytes.joinToString("") { "%02x".format(it) }.take(16)
+              }
+          }
+          KOTLIN_EOF
+
+      - name: Reemplazar MediaItem.kt (anadir isFolder)
         run: |
-          echo "========== MediaItemDao.kt =========="
-          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/local/MediaItemDao.kt"
+          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/model/MediaItem.kt" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.data.model
 
-      - name: MediaItemEntity.kt
+          data class MediaItem(
+              val id: String,
+              val title: String,
+              val author: String?,
+              val coverPath: String?,
+              val filePath: String,
+              val format: MediaFormat,
+              val type: MediaType,
+              val collection: String?,
+              val pageCount: Int,
+              val currentPage: Int = 0,
+              val lastReadAt: Long? = null,
+              val addedAt: Long,
+              val metadata: ItemMetadata = ItemMetadata()
+          )
+
+          data class ItemMetadata(
+              val series: String? = null,
+              val number: String? = null,
+              val volume: String? = null,
+              val summary: String? = null,
+              val publisher: String? = null,
+              val year: Int? = null,
+              val genres: List<String> = emptyList(),
+              val language: String? = null,
+              val isbn: String? = null,
+              val writer: String? = null,
+              val artist: String? = null
+          )
+
+          enum class MediaFormat {
+              CBZ, CBR, EPUB, PDF
+          }
+
+          enum class MediaType {
+              MANGA, COMIC, BOOK, UNKNOWN
+          }
+          KOTLIN_EOF
+
+      - name: Compilar APK
         run: |
-          echo "========== MediaItemEntity.kt =========="
-          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/local/MediaItemEntity.kt"
+          cd lumi
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | grep -E "^e:|FAILURE|What went wrong|BUILD" | head -50
 
-      - name: Copiar a artifact
+      - name: Verificar APK
+        if: always()
         run: |
-          mkdir -p archivos_lumi
-          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/MainActivity.kt" archivos_lumi/
-          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/navigation/LumiNavHost.kt" archivos_lumi/
-          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/navigation/LumiDestinations.kt" archivos_lumi/
-          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/scanner/LibraryScanner.kt" archivos_lumi/
-          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/local/LumiDatabase.kt" archivos_lumi/
-          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/local/MediaItemDao.kt" archivos_lumi/
-          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/local/MediaItemEntity.kt" archivos_lumi/
-          echo "=== Archivos copiados ==="
-          ls -la archivos_lumi/
+          echo "=== Buscando APK ==="
+          find lumi -name "*.apk" -type f 2>/dev/null || echo "No se encontro APK"
 
-      - name: Subir archivos
+      - name: Subir APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: archivos-lumi-clave
-          path: archivos_lumi/
+          name: Lumi-Imagenes-APK
+          path: lumi/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
