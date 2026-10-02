@@ -1,4 +1,4 @@
-name: Compilar Lumi con AutoScroll
+name: Compilar Lumi AutoScroll Inmersivo RAR
 
 on:
   push:
@@ -22,6 +22,22 @@ jobs:
 
       - name: Dar permisos a gradlew
         run: chmod +x lumi/gradlew
+
+      - name: Añadir junrar al build.gradle
+        run: |
+          cd lumi
+          # Buscar el archivo build.gradle del modulo app
+          GRADLE_FILE=$(find . -name "build.gradle" -path "*/app/*" | head -1)
+          echo "Archivo encontrado: $GRADLE_FILE"
+          if [ -n "$GRADLE_FILE" ]; then
+            # Añadir junrar dentro del bloque dependencies
+            sed -i 's|dependencies {|dependencies {\n    implementation "com.github.junrar:junrar:7.5.5"|' "$GRADLE_FILE"
+            echo "=== Contenido del bloque dependencies ==="
+            grep -A 30 "dependencies {" "$GRADLE_FILE" | head -35
+          else
+            echo "No se encontro build.gradle del modulo app"
+            find . -name "build.gradle"
+          fi
 
       - name: Reemplazar WebtoonReader.kt
         run: |
@@ -149,11 +165,12 @@ jobs:
           }
           KOTLIN_EOF
 
-      - name: Reemplazar ReaderScreen.kt
+      - name: Reemplazar ReaderScreen.kt con panel ocultable
         run: |
           cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/ReaderScreen.kt" << 'KOTLIN_EOF'
           package io.github.amiigood.lumi.lumi.ui.reader
 
+          import android.app.Activity
           import androidx.compose.animation.AnimatedVisibility
           import androidx.compose.animation.fadeIn
           import androidx.compose.animation.fadeOut
@@ -170,6 +187,7 @@ jobs:
           import androidx.compose.foundation.layout.fillMaxWidth
           import androidx.compose.foundation.layout.height
           import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
           import androidx.compose.foundation.layout.statusBars
           import androidx.compose.foundation.layout.windowInsetsPadding
           import androidx.compose.foundation.lazy.rememberLazyListState
@@ -180,6 +198,7 @@ jobs:
           import androidx.compose.material.icons.rounded.ViewCarousel
           import androidx.compose.material.icons.rounded.ViewDay
           import androidx.compose.material3.Button
+          import androidx.compose.material3.ButtonDefaults
           import androidx.compose.material3.CircularProgressIndicator
           import androidx.compose.material3.Icon
           import androidx.compose.material3.IconButton
@@ -187,6 +206,7 @@ jobs:
           import androidx.compose.material3.MaterialTheme
           import androidx.compose.material3.Text
           import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.DisposableEffect
           import androidx.compose.runtime.LaunchedEffect
           import androidx.compose.runtime.collectAsState
           import androidx.compose.runtime.getValue
@@ -198,8 +218,12 @@ jobs:
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.unit.dp
+          import androidx.core.view.WindowCompat
+          import androidx.core.view.WindowInsetsCompat
+          import androidx.core.view.WindowInsetsControllerCompat
           import androidx.hilt.navigation.compose.hiltViewModel
           import io.github.amiigood.lumi.lumi.data.model.ReadingMode
           import kotlinx.coroutines.delay
@@ -277,6 +301,9 @@ jobs:
 
               var autoScrollActivo by remember { mutableStateOf(false) }
               var velocidadAutoScroll by remember { mutableStateOf(2.0f) }
+              var modoInmersivo by remember { mutableStateOf(false) }
+
+              val context = LocalContext.current
 
               LaunchedEffect(state.mode, pagerState, webtoonState) {
                   snapshotFlow {
@@ -287,10 +314,32 @@ jobs:
                   }.collect { page -> onPageChanged(page) }
               }
 
-              LaunchedEffect(showOverlay, autoScrollActivo) {
-                  if (showOverlay && !showTutorial && !autoScrollActivo) {
+              LaunchedEffect(showOverlay, autoScrollActivo, modoInmersivo) {
+                  if (showOverlay && !showTutorial && !autoScrollActivo && !modoInmersivo) {
                       delay(3000)
                       showOverlay = false
+                  }
+              }
+
+              DisposableEffect(modoInmersivo) {
+                  val activity = context as? Activity
+                  if (activity != null) {
+                      val window = activity.window
+                      val controller = WindowCompat.getInsetsController(window, window.decorView)
+                      if (modoInmersivo) {
+                          controller.hide(WindowInsetsCompat.Type.systemBars())
+                          controller.systemBarsBehavior =
+                              WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                      } else {
+                          controller.show(WindowInsetsCompat.Type.systemBars())
+                      }
+                  }
+                  onDispose {
+                      val activity2 = context as? Activity
+                      if (activity2 != null) {
+                          val controller = WindowCompat.getInsetsController(activity2.window, activity2.window.decorView)
+                          controller.show(WindowInsetsCompat.Type.systemBars())
+                      }
                   }
               }
 
@@ -335,7 +384,7 @@ jobs:
                   }
 
                   AnimatedVisibility(
-                      visible = showOverlay && !autoScrollActivo,
+                      visible = showOverlay && !modoInmersivo,
                       enter = slideInVertically { -it } + fadeIn(),
                       exit = slideOutVertically { -it } + fadeOut(),
                       modifier = Modifier.align(Alignment.TopCenter)
@@ -349,7 +398,7 @@ jobs:
                   }
 
                   AnimatedVisibility(
-                      visible = showOverlay && !autoScrollActivo,
+                      visible = showOverlay && !modoInmersivo,
                       enter = slideInVertically { it } + fadeIn(),
                       exit = slideOutVertically { it } + fadeOut(),
                       modifier = Modifier.align(Alignment.BottomCenter)
@@ -362,29 +411,38 @@ jobs:
                           currentPage = currentPage,
                           totalPages = state.pages.size,
                           autoScrollActivo = autoScrollActivo,
-                          velocidad = velocidadAutoScroll,
                           onToggleAutoScroll = {
                               autoScrollActivo = !autoScrollActivo
-                              if (autoScrollActivo) showOverlay = false
+                              if (autoScrollActivo) {
+                                  showOverlay = true
+                                  modoInmersivo = true
+                              }
                           },
-                          onAumentarVelocidad = { velocidadAutoScroll = velocidadAutoScroll + 0.5f },
-                          onReducirVelocidad = { velocidadAutoScroll = (velocidadAutoScroll - 0.5f).coerceAtLeast(0.5f) }
+                          onActivarInmersivo = {
+                              modoInmersivo = !modoInmersivo
+                              showOverlay = true
+                          }
                       )
                   }
 
-                  if (autoScrollActivo) {
-                      Box(
-                          modifier = Modifier
-                              .align(Alignment.TopEnd)
-                              .padding(16.dp)
-                      ) {
-                          Button(onClick = {
+                  // Panel flotante: ahora se oculta al tocar la pantalla (showOverlay)
+                  AnimatedVisibility(
+                      visible = (autoScrollActivo || modoInmersivo) && showOverlay,
+                      enter = fadeIn(),
+                      exit = fadeOut(),
+                      modifier = Modifier.align(Alignment.TopStart)
+                  ) {
+                      PanelVelocidadFlotante(
+                          velocidad = velocidadAutoScroll,
+                          onAumentar = { velocidadAutoScroll = (velocidadAutoScroll + 0.5f).coerceAtMost(20f) },
+                          onReducir = { velocidadAutoScroll = (velocidadAutoScroll - 0.5f).coerceAtLeast(0.5f) },
+                          onSalir = {
                               autoScrollActivo = false
+                              modoInmersivo = false
                               showOverlay = true
-                          }) {
-                              Text("PAUSA", color = Color.White)
-                          }
-                      }
+                          },
+                          modifier = Modifier.padding(16.dp)
+                      )
                   }
 
                   if (showTutorial) {
@@ -449,10 +507,8 @@ jobs:
               currentPage: Int,
               totalPages: Int,
               autoScrollActivo: Boolean,
-              velocidad: Float,
               onToggleAutoScroll: () -> Unit,
-              onAumentarVelocidad: () -> Unit,
-              onReducirVelocidad: () -> Unit
+              onActivarInmersivo: () -> Unit
           ) {
               Column(
                   modifier = Modifier
@@ -465,39 +521,32 @@ jobs:
                       horizontalArrangement = Arrangement.Center,
                       verticalAlignment = Alignment.CenterVertically
                   ) {
-                      Button(onClick = onToggleAutoScroll) {
+                      Button(
+                          onClick = onToggleAutoScroll,
+                          colors = ButtonDefaults.buttonColors(
+                              containerColor = MaterialTheme.colorScheme.primary
+                          )
+                      ) {
                           Text(
                               text = if (autoScrollActivo) "PAUSAR" else "AUTO ▶",
                               color = Color.White
                           )
                       }
-                      Spacer(Modifier.padding(horizontal = 8.dp))
+                      Spacer(Modifier.size(12.dp))
+                      Button(
+                          onClick = onActivarInmersivo,
+                          colors = ButtonDefaults.buttonColors(
+                              containerColor = Color.DarkGray
+                          )
+                      ) {
+                          Text("INMERSIVO", color = Color.White)
+                      }
+                      Spacer(Modifier.size(12.dp))
                       Text(
                           text = "$currentPage / $totalPages",
                           color = Color.White,
-                          style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                          modifier = Modifier.padding(horizontal = 16.dp)
+                          style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                       )
-                  }
-
-                  Spacer(Modifier.height(8.dp))
-
-                  Row(
-                      modifier = Modifier.fillMaxWidth(),
-                      horizontalArrangement = Arrangement.Center,
-                      verticalAlignment = Alignment.CenterVertically
-                  ) {
-                      Button(onClick = onReducirVelocidad) {
-                          Text("-", color = Color.White)
-                      }
-                      Text(
-                          text = "  Vel: ${velocidad}x  ",
-                          color = Color.White,
-                          style = MaterialTheme.typography.bodyMedium
-                      )
-                      Button(onClick = onAumentarVelocidad) {
-                          Text("+", color = Color.White)
-                      }
                   }
 
                   LinearProgressIndicator(
@@ -508,6 +557,52 @@ jobs:
                           .fillMaxWidth()
                           .padding(top = 8.dp)
                   )
+              }
+          }
+
+          @Composable
+          private fun PanelVelocidadFlotante(
+              velocidad: Float,
+              onAumentar: () -> Unit,
+              onReducir: () -> Unit,
+              onSalir: () -> Unit,
+              modifier: Modifier = Modifier
+          ) {
+              Column(
+                  modifier = modifier
+                      .background(Color.Black.copy(alpha = 0.7f))
+                      .padding(8.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.spacedBy(4.dp)
+              ) {
+                  Text(
+                      text = "Vel: ${String.format("%.1f", velocidad)}x",
+                      color = Color.White,
+                      style = MaterialTheme.typography.bodySmall
+                  )
+                  Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                      Button(
+                          onClick = onReducir,
+                          colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                          modifier = Modifier.size(48.dp)
+                      ) {
+                          Text("-", color = Color.White, fontWeight = FontWeight.Bold)
+                      }
+                      Button(
+                          onClick = onAumentar,
+                          colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                          modifier = Modifier.size(48.dp)
+                      ) {
+                          Text("+", color = Color.White, fontWeight = FontWeight.Bold)
+                      }
+                  }
+                  Button(
+                      onClick = onSalir,
+                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                      modifier = Modifier.fillMaxWidth()
+                  ) {
+                      Text("SALIR", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                  }
               }
           }
           KOTLIN_EOF
@@ -527,6 +622,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Lumi-AutoScroll-APK
+          name: Lumi-AutoScroll-Inmersivo-RAR-APK
           path: lumi/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
