@@ -1,4 +1,4 @@
-name: Compilar Lumi con soporte de carpetas de imagenes
+name: Compilar Lumi completa
 
 on:
   push:
@@ -27,17 +27,28 @@ jobs:
         run: |
           cd lumi
           GRADLE_FILE=$(find . -name "build.gradle" -path "*/app/*" | head -1)
-          echo "Archivo: $GRADLE_FILE"
+          echo "Gradle file: $GRADLE_FILE"
           if [ -n "$GRADLE_FILE" ]; then
-            # Anadir coil-gif despues de coil si no esta
             if ! grep -q "coil-gif" "$GRADLE_FILE"; then
-              sed -i 's|implementation.*coil.*|&\n    implementation "io.coil-kt:coil-gif:2.5.0"|' "$GRADLE_FILE"
+              sed -i 's|dependencies {|dependencies {\n    implementation "io.coil-kt:coil-gif:2.5.0"|' "$GRADLE_FILE"
             fi
             echo "=== Dependencias coil ==="
-            grep -i coil "$GRADLE_FILE"
+            grep -i coil "$GRADLE_FILE" || echo "No se encontro coil"
           fi
 
-      - name: Reemplazar FormatDetector.kt (anadir IMAGE_FOLDER)
+      - name: Modificar AndroidManifest.xml (rotacion estable)
+        run: |
+          MANIFEST=$(find lumi -name "AndroidManifest.xml" -path "*/main/*" | head -1)
+          echo "Manifest: $MANIFEST"
+          if grep -q "configChanges" "$MANIFEST"; then
+            echo "Ya tiene configChanges"
+          else
+            sed -i 's|android:name=".MainActivity"|android:name=".MainActivity"\n            android:configChanges="orientation\|screenSize\|keyboardHidden\|screenLayout\|smallestScreenSize"|' "$MANIFEST"
+          fi
+          echo "=== Manifest ==="
+          cat "$MANIFEST"
+
+      - name: Reemplazar FormatDetector.kt
         run: |
           cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/util/FormatDetector.kt" << 'KOTLIN_EOF'
           package io.github.amiigood.lumi.lumi.util
@@ -86,7 +97,7 @@ jobs:
           }
           KOTLIN_EOF
 
-      - name: Reemplazar LibraryScanner.kt (detectar carpetas de imagenes)
+      - name: Reemplazar LibraryScanner.kt (carpetas con imagenes)
         run: |
           cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/scanner/LibraryScanner.kt" << 'KOTLIN_EOF'
           package io.github.amiigood.lumi.lumi.data.scanner
@@ -174,7 +185,6 @@ jobs:
                       }
                   }
 
-                  // Si la carpeta tiene imagenes y NO subcarpetas, tratarla como un comic
                   if (imageCount > 0 && subfolderCount == 0 && parents.isNotEmpty()) {
                       foldersOut.add(ScannedFolder(dir, imageCount, parents))
                   }
@@ -244,54 +254,650 @@ jobs:
           }
           KOTLIN_EOF
 
-      - name: Reemplazar MediaItem.kt (anadir isFolder)
+      - name: Reemplazar WebtoonReader.kt
         run: |
-          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/model/MediaItem.kt" << 'KOTLIN_EOF'
-          package io.github.amiigood.lumi.lumi.data.model
+          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/WebtoonReader.kt" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.ui.reader
 
-          data class MediaItem(
-              val id: String,
-              val title: String,
-              val author: String?,
-              val coverPath: String?,
-              val filePath: String,
-              val format: MediaFormat,
-              val type: MediaType,
-              val collection: String?,
-              val pageCount: Int,
-              val currentPage: Int = 0,
-              val lastReadAt: Long? = null,
-              val addedAt: Long,
-              val metadata: ItemMetadata = ItemMetadata()
-          )
+          import android.content.Context
+          import androidx.compose.foundation.gestures.detectTapGestures
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.heightIn
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.LazyListState
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.lazy.rememberLazyListState
+          import androidx.compose.material3.CircularProgressIndicator
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.LaunchedEffect
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.setValue
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.input.pointer.pointerInput
+          import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.platform.LocalConfiguration
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.platform.LocalDensity
+          import androidx.compose.ui.unit.dp
+          import coil.compose.AsyncImage
+          import coil.request.ImageRequest
+          import io.github.amiigood.lumi.lumi.data.reader.PageRef
+          import java.io.File
+          import kotlinx.coroutines.delay
 
-          data class ItemMetadata(
-              val series: String? = null,
-              val number: String? = null,
-              val volume: String? = null,
-              val summary: String? = null,
-              val publisher: String? = null,
-              val year: Int? = null,
-              val genres: List<String> = emptyList(),
-              val language: String? = null,
-              val isbn: String? = null,
-              val writer: String? = null,
-              val artist: String? = null
-          )
+          @Composable
+          fun WebtoonReader(
+              pages: List<PageRef>,
+              initialPage: Int,
+              listState: LazyListState = rememberLazyListState(initialPage),
+              onCenterTap: () -> Unit,
+              modifier: Modifier = Modifier,
+              autoScrollActivo: Boolean = false,
+              velocidadAutoScroll: Float = 2.0f
+          ) {
+              val context = LocalContext.current
+              val density = LocalDensity.current
+              val config = LocalConfiguration.current
 
-          enum class MediaFormat {
-              CBZ, CBR, EPUB, PDF
+              val screenWidthDp = config.screenWidthDp
+              val targetWidthPx = with(density) { screenWidthDp.dp.roundToPx() }
+
+              LaunchedEffect(autoScrollActivo, velocidadAutoScroll) {
+                  if (autoScrollActivo) {
+                      while (true) {
+                          delay(16)
+                          try {
+                              listState.dispatchRawDelta(velocidadAutoScroll)
+                          } catch (e: Exception) {
+                              break
+                          }
+                      }
+                  }
+              }
+
+              Box(modifier = modifier) {
+                  LazyColumn(
+                      state = listState,
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .pointerInput(Unit) {
+                              detectTapGestures(onTap = { onCenterTap() })
+                          }
+                  ) {
+                      items(pages, key = { it.key }) { page ->
+                          WebtoonPage(
+                              page = page,
+                              targetWidthPx = targetWidthPx,
+                              context = context
+                          )
+                      }
+                  }
+              }
           }
 
-          enum class MediaType {
-              MANGA, COMIC, BOOK, UNKNOWN
+          @Composable
+          private fun WebtoonPage(
+              page: PageRef,
+              targetWidthPx: Int,
+              context: Context
+          ) {
+              var resolvedFile by remember(page.key) { mutableStateOf<File?>(null) }
+
+              LaunchedEffect(page.key) {
+                  resolvedFile = when (page) {
+                      is PageRef.Direct -> page.file
+                      is PageRef.LazyPdf -> page.resolve()
+                  }
+              }
+
+              val file = resolvedFile
+              if (file == null) {
+                  Box(
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .heightIn(min = 300.dp),
+                      contentAlignment = Alignment.Center
+                  ) {
+                      CircularProgressIndicator(color = Color.White.copy(alpha = 0.5f))
+                  }
+              } else {
+                  AsyncImage(
+                      model = ImageRequest.Builder(context)
+                          .data(file)
+                          .size(targetWidthPx)
+                          .crossfade(false)
+                          .build(),
+                      contentDescription = null,
+                      contentScale = ContentScale.FillWidth,
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .heightIn(min = 1.dp)
+                  )
+              }
+          }
+          KOTLIN_EOF
+
+      - name: Reemplazar ReaderScreen.kt (todo incluido)
+        run: |
+          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/ReaderScreen.kt" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.ui.reader
+
+          import android.app.Activity
+          import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.fadeIn
+          import androidx.compose.animation.fadeOut
+          import androidx.compose.animation.slideInVertically
+          import androidx.compose.animation.slideOutVertically
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.WindowInsets
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.layout.statusBars
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.foundation.layout.windowInsetsPadding
+          import androidx.compose.foundation.lazy.rememberLazyListState
+          import androidx.compose.foundation.pager.HorizontalPager
+          import androidx.compose.foundation.pager.rememberPagerState
+          import androidx.compose.foundation.text.KeyboardOptions
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+          import androidx.compose.material.icons.rounded.ViewCarousel
+          import androidx.compose.material.icons.rounded.ViewDay
+          import androidx.compose.material3.Button
+          import androidx.compose.material3.ButtonDefaults
+          import androidx.compose.material3.CircularProgressIndicator
+          import androidx.compose.material3.Icon
+          import androidx.compose.material3.IconButton
+          import androidx.compose.material3.LinearProgressIndicator
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.OutlinedTextField
+          import androidx.compose.material3.Slider
+          import androidx.compose.material3.SliderDefaults
+          import androidx.compose.material3.Text
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.DisposableEffect
+          import androidx.compose.runtime.LaunchedEffect
+          import androidx.compose.runtime.collectAsState
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.rememberCoroutineScope
+          import androidx.compose.runtime.setValue
+          import androidx.compose.runtime.snapshotFlow
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.input.KeyboardType
+          import androidx.compose.ui.unit.dp
+          import androidx.core.view.WindowCompat
+          import androidx.core.view.WindowInsetsCompat
+          import androidx.core.view.WindowInsetsControllerCompat
+          import androidx.hilt.navigation.compose.hiltViewModel
+          import io.github.amiigood.lumi.lumi.data.model.ReadingMode
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.launch
+
+          @Composable
+          fun ReaderScreen(
+              onBack: () -> Unit,
+              viewModel: ReaderViewModel = hiltViewModel()
+          ) {
+              val state by viewModel.state.collectAsState()
+
+              Box(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .background(Color.Black)
+              ) {
+                  when (val s = state) {
+                      ReaderUiState.Loading -> Column(
+                          modifier = Modifier.align(Alignment.Center),
+                          horizontalAlignment = Alignment.CenterHorizontally
+                      ) {
+                          CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                          Spacer(Modifier.height(16.dp))
+                          Text(
+                              text = "Preparando paginas...",
+                              color = Color.White.copy(alpha = 0.7f),
+                              style = MaterialTheme.typography.bodyMedium
+                          )
+                      }
+                      is ReaderUiState.Error -> Text(
+                          text = s.message,
+                          color = Color.White,
+                          modifier = Modifier.align(Alignment.Center)
+                      )
+                      is ReaderUiState.Unsupported -> Text(
+                          text = "Lector ${s.format.name} proximamente",
+                          color = Color.White,
+                          modifier = Modifier.align(Alignment.Center)
+                      )
+                      is ReaderUiState.ImageReady -> ImageReader(
+                          state = s,
+                          onBack = onBack,
+                          onTutorialSeen = viewModel::markTutorialSeen,
+                          onToggleMode = viewModel::toggleMode,
+                          onPageChanged = { page -> viewModel.saveProgress(page, s.pages.size) }
+                      )
+                      is ReaderUiState.EpubReady -> EpubReader(
+                          htmlFile = s.htmlFile,
+                          title = s.item.title,
+                          initialProgress = s.initialProgress,
+                          onBack = onBack,
+                          onProgressChanged = { current, total -> viewModel.saveProgress(current, total) }
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          private fun ImageReader(
+              state: ReaderUiState.ImageReady,
+              onBack: () -> Unit,
+              onTutorialSeen: () -> Unit,
+              onToggleMode: () -> Unit,
+              onPageChanged: (Int) -> Unit
+          ) {
+              val pagerState = rememberPagerState(
+                  initialPage = state.initialPage,
+                  pageCount = { state.pages.size }
+              )
+              val webtoonState = rememberLazyListState(state.initialPage)
+              val scope = rememberCoroutineScope()
+              var showOverlay by remember { mutableStateOf(true) }
+              var showTutorial by remember { mutableStateOf(state.showTutorial) }
+
+              var autoScrollActivo by remember { mutableStateOf(false) }
+              var velocidadAutoScroll by remember { mutableStateOf(2.0f) }
+              var modoInmersivo by remember { mutableStateOf(false) }
+              var textoPagina by remember { mutableStateOf("") }
+
+              val context = LocalContext.current
+
+              LaunchedEffect(state.mode, pagerState, webtoonState) {
+                  snapshotFlow {
+                      when (state.mode) {
+                          ReadingMode.PAGED -> pagerState.currentPage
+                          ReadingMode.WEBTOON -> webtoonState.firstVisibleItemIndex
+                      }
+                  }.collect { page -> onPageChanged(page) }
+              }
+
+              LaunchedEffect(showOverlay, autoScrollActivo, modoInmersivo) {
+                  if (showOverlay && !showTutorial && !autoScrollActivo && !modoInmersivo) {
+                      delay(3000)
+                      showOverlay = false
+                  }
+              }
+
+              DisposableEffect(modoInmersivo) {
+                  val activity = context as? Activity
+                  if (activity != null) {
+                      val window = activity.window
+                      val controller = WindowCompat.getInsetsController(window, window.decorView)
+                      if (modoInmersivo) {
+                          controller.hide(WindowInsetsCompat.Type.systemBars())
+                          controller.systemBarsBehavior =
+                              WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                      } else {
+                          controller.show(WindowInsetsCompat.Type.systemBars())
+                      }
+                  }
+                  onDispose {
+                      val activity2 = context as? Activity
+                      if (activity2 != null) {
+                          val controller = WindowCompat.getInsetsController(activity2.window, activity2.window.decorView)
+                          controller.show(WindowInsetsCompat.Type.systemBars())
+                      }
+                  }
+              }
+
+              val currentPage = when (state.mode) {
+                  ReadingMode.PAGED -> pagerState.currentPage
+                  ReadingMode.WEBTOON -> webtoonState.firstVisibleItemIndex
+              }
+
+              Box(modifier = Modifier.fillMaxSize()) {
+                  when (state.mode) {
+                      ReadingMode.PAGED -> {
+                          HorizontalPager(
+                              state = pagerState,
+                              modifier = Modifier.fillMaxSize()
+                          ) { page ->
+                              ZoomablePage(
+                                  page = state.pages[page],
+                                  onTap = { zone ->
+                                      when (zone) {
+                                          TapZone.Left -> scope.launch {
+                                              if (pagerState.currentPage > 0) {
+                                                  pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                              }
+                                          }
+                                          TapZone.Right -> scope.launch {
+                                              if (pagerState.currentPage < state.pages.lastIndex) {
+                                                  pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                              }
+                                          }
+                                          TapZone.Center -> showOverlay = !showOverlay
+                                      }
+                                  }
+                              )
+                          }
+                      }
+                      ReadingMode.WEBTOON -> {
+                          WebtoonReader(
+                              pages = state.pages,
+                              initialPage = state.initialPage,
+                              listState = webtoonState,
+                              onCenterTap = { showOverlay = !showOverlay },
+                              modifier = Modifier.fillMaxSize(),
+                              autoScrollActivo = autoScrollActivo,
+                              velocidadAutoScroll = velocidadAutoScroll
+                          )
+                      }
+                  }
+
+                  AnimatedVisibility(
+                      visible = showOverlay && !modoInmersivo,
+                      enter = slideInVertically { -it } + fadeIn(),
+                      exit = slideOutVertically { -it } + fadeOut(),
+                      modifier = Modifier.align(Alignment.TopCenter)
+                  ) {
+                      TopBar(
+                          title = state.item.title,
+                          mode = state.mode,
+                          onBack = onBack,
+                          onToggleMode = onToggleMode
+                      )
+                  }
+
+                  AnimatedVisibility(
+                      visible = showOverlay && !modoInmersivo,
+                      enter = slideInVertically { -it } + fadeIn(),
+                      exit = slideOutVertically { -it } + fadeOut(),
+                      modifier = Modifier
+                          .align(Alignment.TopCenter)
+                          .padding(top = 64.dp)
+                  ) {
+                      Row(
+                          modifier = Modifier
+                              .background(Color.Black.copy(alpha = 0.7f))
+                              .padding(8.dp),
+                          horizontalArrangement = Arrangement.spacedBy(8.dp),
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          Button(
+                              onClick = { autoScrollActivo = !autoScrollActivo },
+                              colors = ButtonDefaults.buttonColors(
+                                  containerColor = if (autoScrollActivo) Color(0xFFD32F2F) else MaterialTheme.colorScheme.primary
+                              )
+                          ) {
+                              Text(
+                                  text = if (autoScrollActivo) "PAUSAR" else "AUTO",
+                                  color = Color.White
+                              )
+                          }
+                          Button(
+                              onClick = {
+                                  modoInmersivo = true
+                                  showOverlay = true
+                              },
+                              colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
+                          ) {
+                              Text("INMERSIVO", color = Color.White)
+                          }
+                      }
+                  }
+
+                  AnimatedVisibility(
+                      visible = showOverlay && !modoInmersivo,
+                      enter = slideInVertically { it } + fadeIn(),
+                      exit = slideOutVertically { it } + fadeOut(),
+                      modifier = Modifier.align(Alignment.BottomCenter)
+                  ) {
+                      Column(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .background(Color.Black.copy(alpha = 0.8f))
+                              .padding(16.dp)
+                      ) {
+                          Slider(
+                              value = currentPage.toFloat(),
+                              onValueChange = { nuevo ->
+                                  val pagina = nuevo.toInt().coerceIn(0, state.pages.size - 1)
+                                  scope.launch {
+                                      when (state.mode) {
+                                          ReadingMode.PAGED -> pagerState.scrollToPage(pagina)
+                                          ReadingMode.WEBTOON -> webtoonState.scrollToItem(pagina)
+                                      }
+                                  }
+                              },
+                              valueRange = 0f..(state.pages.size - 1).toFloat().coerceAtLeast(1f),
+                              colors = SliderDefaults.colors(
+                                  thumbColor = MaterialTheme.colorScheme.primary,
+                                  activeTrackColor = MaterialTheme.colorScheme.primary,
+                                  inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                              ),
+                              modifier = Modifier.fillMaxWidth()
+                          )
+
+                          Spacer(Modifier.height(8.dp))
+
+                          Row(
+                              modifier = Modifier.fillMaxWidth(),
+                              horizontalArrangement = Arrangement.Center,
+                              verticalAlignment = Alignment.CenterVertically
+                          ) {
+                              OutlinedTextField(
+                                  value = textoPagina.ifEmpty { (currentPage + 1).toString() },
+                                  onValueChange = { texto ->
+                                      textoPagina = texto.filter { it.isDigit() }.take(6)
+                                  },
+                                  label = { Text("Pag", color = Color.White) },
+                                  singleLine = true,
+                                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                  modifier = Modifier.width(110.dp)
+                              )
+                              Spacer(Modifier.width(8.dp))
+                              Text(
+                                  text = "/ ${state.pages.size}",
+                                  color = Color.White,
+                                  style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                              )
+                              Spacer(Modifier.width(8.dp))
+                              Button(
+                                  onClick = {
+                                      val num = textoPagina.toIntOrNull()
+                                      if (num != null) {
+                                          val pagina = (num - 1).coerceIn(0, state.pages.size - 1)
+                                          scope.launch {
+                                              when (state.mode) {
+                                                  ReadingMode.PAGED -> pagerState.scrollToPage(pagina)
+                                                  ReadingMode.WEBTOON -> webtoonState.scrollToItem(pagina)
+                                              }
+                                              textoPagina = ""
+                                          }
+                                      }
+                                  },
+                                  colors = ButtonDefaults.buttonColors(
+                                      containerColor = MaterialTheme.colorScheme.primary
+                                  )
+                              ) {
+                                  Text("IR", color = Color.White)
+                              }
+                          }
+
+                          LinearProgressIndicator(
+                              progress = { (currentPage + 1).toFloat() / state.pages.size.toFloat() },
+                              color = MaterialTheme.colorScheme.primary,
+                              trackColor = Color.White.copy(alpha = 0.2f),
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .padding(top = 8.dp)
+                          )
+                      }
+                  }
+
+                  AnimatedVisibility(
+                      visible = (autoScrollActivo || modoInmersivo) && showOverlay,
+                      enter = fadeIn(),
+                      exit = fadeOut(),
+                      modifier = Modifier
+                          .align(Alignment.TopStart)
+                          .padding(16.dp)
+                          .windowInsetsPadding(WindowInsets.statusBars)
+                  ) {
+                      PanelVelocidadFlotante(
+                          velocidad = velocidadAutoScroll,
+                          autoScrollActivo = autoScrollActivo,
+                          onAumentar = { velocidadAutoScroll = (velocidadAutoScroll + 0.5f).coerceAtMost(20f) },
+                          onReducir = { velocidadAutoScroll = (velocidadAutoScroll - 0.5f).coerceAtLeast(0.5f) },
+                          onTogglePlay = { autoScrollActivo = !autoScrollActivo },
+                          onSalir = {
+                              autoScrollActivo = false
+                              modoInmersivo = false
+                              showOverlay = true
+                          }
+                      )
+                  }
+
+                  if (showTutorial) {
+                      ReaderTutorial(
+                          onDismiss = {
+                              showTutorial = false
+                              showOverlay = true
+                              onTutorialSeen()
+                          }
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          private fun TopBar(
+              title: String,
+              mode: ReadingMode,
+              onBack: () -> Unit,
+              onToggleMode: () -> Unit
+          ) {
+              Row(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .background(Color.Black.copy(alpha = 0.7f))
+                      .windowInsetsPadding(WindowInsets.statusBars)
+                      .padding(horizontal = 8.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  IconButton(onClick = onBack) {
+                      Icon(
+                          Icons.AutoMirrored.Rounded.ArrowBack,
+                          contentDescription = "Atras",
+                          tint = Color.White
+                      )
+                  }
+                  Text(
+                      text = title,
+                      color = Color.White,
+                      style = MaterialTheme.typography.titleMedium,
+                      modifier = Modifier
+                          .padding(start = 8.dp)
+                          .weight(1f),
+                      maxLines = 1
+                  )
+                  IconButton(onClick = onToggleMode) {
+                      Icon(
+                          imageVector = if (mode == ReadingMode.PAGED) {
+                              Icons.Rounded.ViewDay
+                          } else {
+                              Icons.Rounded.ViewCarousel
+                          },
+                          contentDescription = "Cambiar modo",
+                          tint = Color.White
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          private fun PanelVelocidadFlotante(
+              velocidad: Float,
+              autoScrollActivo: Boolean,
+              onAumentar: () -> Unit,
+              onReducir: () -> Unit,
+              onTogglePlay: () -> Unit,
+              onSalir: () -> Unit
+          ) {
+              Column(
+                  modifier = Modifier
+                      .background(Color.Black.copy(alpha = 0.8f))
+                      .padding(8.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.spacedBy(4.dp)
+              ) {
+                  Text(
+                      text = "Vel: ${String.format("%.1f", velocidad)}x",
+                      color = Color.White,
+                      style = MaterialTheme.typography.bodySmall
+                  )
+                  Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                      Button(
+                          onClick = onReducir,
+                          colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                          modifier = Modifier.size(48.dp)
+                      ) {
+                          Text("-", color = Color.White, fontWeight = FontWeight.Bold)
+                      }
+                      Button(
+                          onClick = onAumentar,
+                          colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                          modifier = Modifier.size(48.dp)
+                      ) {
+                          Text("+", color = Color.White, fontWeight = FontWeight.Bold)
+                      }
+                  }
+                  Button(
+                      onClick = onTogglePlay,
+                      colors = ButtonDefaults.buttonColors(
+                          containerColor = if (autoScrollActivo) Color(0xFFD32F2F) else MaterialTheme.colorScheme.primary
+                      ),
+                      modifier = Modifier.fillMaxWidth()
+                  ) {
+                      Text(
+                          text = if (autoScrollActivo) "PAUSAR" else "PLAY",
+                          color = Color.White,
+                          style = MaterialTheme.typography.bodySmall
+                      )
+                  }
+                  Button(
+                      onClick = onSalir,
+                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF555555)),
+                      modifier = Modifier.fillMaxWidth()
+                  ) {
+                      Text("SALIR", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                  }
+              }
           }
           KOTLIN_EOF
 
       - name: Compilar APK
         run: |
           cd lumi
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | grep -E "^e:|FAILURE|What went wrong|BUILD" | head -50
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | grep -E "^e:|FAILURE|What went wrong|BUILD" | head -60
 
       - name: Verificar APK
         if: always()
@@ -303,6 +909,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Lumi-Imagenes-APK
+          name: Lumi-Completa-APK
           path: lumi/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
