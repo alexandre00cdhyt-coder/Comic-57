@@ -1,4 +1,4 @@
-name: Compilar Lumi original
+name: Inspeccionar Lumi
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  inspect:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,59 +14,41 @@ jobs:
         run: |
           git clone https://github.com/AmiiGood/Lumi.git lumi
 
-      - name: Configurar Java 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Dar permisos a gradlew
-        run: chmod +x lumi/gradlew
-
-      - name: Ver estructura del proyecto
+      - name: Ver estructura
         run: |
-          echo "=== Archivos en la raiz de lumi ==="
-          ls -la lumi/
+          echo "=== CARPETAS ==="
+          find lumi -type d | head -60
           echo ""
-          echo "=== Contenido de la carpeta app ==="
-          ls -la lumi/app/ 2>/dev/null || echo "No hay carpeta app"
+          echo "=== ARCHIVOS KOTLIN ==="
+          find lumi -name "*.kt" | head -100
           echo ""
-          echo "=== Archivos build.gradle ==="
-          find lumi -name "build.gradle*" -maxdepth 3 2>/dev/null
+          echo "=== BUSCAR WEBTOON ==="
+          find lumi -iname "*webtoon*" -o -iname "*viewer*" -o -iname "*reader*" -o -iname "*scroll*"
+
+      - name: Buscar codigo de scroll
+        run: |
+          echo "=== ARCHIVOS CON autoScroll ==="
+          grep -rl "autoScroll" lumi --include="*.kt" 2>/dev/null || echo "no encontrado"
           echo ""
-          echo "=== Version de Gradle configurada ==="
-          cat lumi/gradle/wrapper/gradle-wrapper.properties 2>/dev/null || echo "No se encontro wrapper"
+          echo "=== ARCHIVOS CON scrollBy ==="
+          grep -rl "scrollBy\|animateScroll" lumi --include="*.kt" 2>/dev/null || echo "no encontrado"
+          echo ""
+          echo "=== ARCHIVOS CON webtoon ==="
+          grep -rl "webtoon\|Webtoon" lumi --include="*.kt" 2>/dev/null || echo "no encontrado"
 
-      - name: Compilar APK
+      - name: Copiar archivos clave
         run: |
-          cd lumi
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../build_log.txt
+          mkdir -p info
+          find lumi -name "*.kt" > info/lista_kotlin.txt
+          find lumi -iname "*webtoon*" -exec cp {} info/ \; 2>/dev/null || true
+          find lumi -iname "*viewer*" -exec cp {} info/ \; 2>/dev/null || true
+          find lumi -iname "*reader*" -exec cp {} info/ \; 2>/dev/null || true
+          grep -r "autoScroll\|scrollBy\|webtoon\|speed" lumi --include="*.kt" > info/codigo_scroll.txt 2>/dev/null || true
+          ls -la info/
 
-      - name: Ver log completo
-        if: always()
-        run: |
-          echo "=== Ultimas 50 lineas del log ==="
-          tail -50 build_log.txt
-
-      - name: Verificar APK
-        if: always()
-        run: |
-          echo "=== Buscando APK ==="
-          find lumi -name "*.apk" -type f 2>/dev/null || echo "No se encontro ningun APK"
-          ls -la lumi/app/build/outputs/apk/debug/ 2>/dev/null || echo "No se encontro carpeta debug"
-
-      - name: Subir APK
-        if: success()
+      - name: Subir informacion
         uses: actions/upload-artifact@v4
         with:
-          name: Lumi-Original-APK
-          path: lumi/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
-
-      - name: Subir log de compilacion
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build_log.txt
+          name: info-lumi
+          path: info/
           if-no-files-found: warn
