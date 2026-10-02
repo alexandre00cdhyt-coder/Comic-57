@@ -23,7 +23,7 @@ jobs:
       - name: Dar permisos a gradlew
         run: chmod +x lumi/gradlew
 
-      - name: Reemplazar WebtoonReader.kt con auto-scroll
+      - name: Reemplazar WebtoonReader.kt
         run: |
           cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/WebtoonReader.kt" << 'KOTLIN_EOF'
           package io.github.amiigood.lumi.lumi.ui.reader
@@ -67,20 +67,19 @@ jobs:
               onCenterTap: () -> Unit,
               modifier: Modifier = Modifier,
               autoScrollActivo: Boolean = false,
-              velocidadAutoScroll: Float = 1.0f
+              velocidadAutoScroll: Float = 2.0f
           ) {
               val context = LocalContext.current
               val density = LocalDensity.current
               val config = LocalConfiguration.current
               val targetWidthPx = with(density) { config.screenWidthDp.dp.roundToPx() }
 
-              // AUTO-SCROLL: mueve la lista automaticamente
               LaunchedEffect(autoScrollActivo, velocidadAutoScroll) {
                   if (autoScrollActivo) {
                       while (true) {
                           delay(16)
                           try {
-                              listState.scrollBy(velocidadAutoScroll)
+                              listState.dispatchRawDelta(velocidadAutoScroll)
                           } catch (e: Exception) {
                               break
                           }
@@ -150,7 +149,7 @@ jobs:
           }
           KOTLIN_EOF
 
-      - name: Reemplazar ReaderScreen.kt con auto-scroll UI
+      - name: Reemplazar ReaderScreen.kt
         run: |
           cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/ReaderScreen.kt" << 'KOTLIN_EOF'
           package io.github.amiigood.lumi.lumi.ui.reader
@@ -178,22 +177,19 @@ jobs:
           import androidx.compose.foundation.pager.rememberPagerState
           import androidx.compose.material.icons.Icons
           import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-          import androidx.compose.material.icons.rounded.PlayArrow
-          import androidx.compose.material.icons.rounded.Pause
           import androidx.compose.material.icons.rounded.ViewCarousel
           import androidx.compose.material.icons.rounded.ViewDay
+          import androidx.compose.material3.Button
           import androidx.compose.material3.CircularProgressIndicator
           import androidx.compose.material3.Icon
           import androidx.compose.material3.IconButton
           import androidx.compose.material3.LinearProgressIndicator
           import androidx.compose.material3.MaterialTheme
-          import androidx.compose.material3.Slider
           import androidx.compose.material3.Text
           import androidx.compose.runtime.Composable
           import androidx.compose.runtime.LaunchedEffect
           import androidx.compose.runtime.collectAsState
           import androidx.compose.runtime.getValue
-          import androidx.compose.runtime.mutableFloatStateOf
           import androidx.compose.runtime.mutableStateOf
           import androidx.compose.runtime.remember
           import androidx.compose.runtime.rememberCoroutineScope
@@ -279,10 +275,8 @@ jobs:
               var showOverlay by remember { mutableStateOf(true) }
               var showTutorial by remember { mutableStateOf(state.showTutorial) }
 
-              // AUTO-SCROLL: estados
               var autoScrollActivo by remember { mutableStateOf(false) }
-              var velocidadAutoScroll by remember { mutableFloatStateOf(2.0f) }
-              var mostrarControlesAutoScroll by remember { mutableStateOf(false) }
+              var velocidadAutoScroll by remember { mutableStateOf(2.0f) }
 
               LaunchedEffect(state.mode, pagerState, webtoonState) {
                   snapshotFlow {
@@ -340,7 +334,6 @@ jobs:
                       }
                   }
 
-                  // TOP BAR - solo aparece si NO esta auto-scroll activo
                   AnimatedVisibility(
                       visible = showOverlay && !autoScrollActivo,
                       enter = slideInVertically { -it } + fadeIn(),
@@ -355,7 +348,6 @@ jobs:
                       )
                   }
 
-                  // BOTTOM BAR con controles de auto-scroll
                   AnimatedVisibility(
                       visible = showOverlay && !autoScrollActivo,
                       enter = slideInVertically { it } + fadeIn(),
@@ -371,35 +363,27 @@ jobs:
                           totalPages = state.pages.size,
                           autoScrollActivo = autoScrollActivo,
                           velocidad = velocidadAutoScroll,
-                          mostrarControles = mostrarControlesAutoScroll,
                           onToggleAutoScroll = {
                               autoScrollActivo = !autoScrollActivo
-                              if (autoScrollActivo) {
-                                  showOverlay = false
-                              }
+                              if (autoScrollActivo) showOverlay = false
                           },
-                          onVelocidadChanged = { velocidadAutoScroll = it },
-                          onMostrarControles = { mostrarControlesAutoScroll = !mostrarControlesAutoScroll }
+                          onAumentarVelocidad = { velocidadAutoScroll = velocidadAutoScroll + 0.5f },
+                          onReducirVelocidad = { velocidadAutoScroll = (velocidadAutoScroll - 0.5f).coerceAtLeast(0.5f) }
                       )
                   }
 
-                  // BOTON FLOTANTE para detener auto-scroll (si esta activo)
                   if (autoScrollActivo) {
-                      IconButton(
-                          onClick = {
-                              autoScrollActivo = false
-                              showOverlay = true
-                          },
+                      Box(
                           modifier = Modifier
                               .align(Alignment.TopEnd)
                               .padding(16.dp)
-                              .background(Color.Black.copy(alpha = 0.5f))
                       ) {
-                          Icon(
-                              Icons.Rounded.Pause,
-                              contentDescription = "Detener auto-scroll",
-                              tint = Color.White
-                          )
+                          Button(onClick = {
+                              autoScrollActivo = false
+                              showOverlay = true
+                          }) {
+                              Text("PAUSA", color = Color.White)
+                          }
                       }
                   }
 
@@ -466,10 +450,9 @@ jobs:
               totalPages: Int,
               autoScrollActivo: Boolean,
               velocidad: Float,
-              mostrarControles: Boolean,
               onToggleAutoScroll: () -> Unit,
-              onVelocidadChanged: (Float) -> Unit,
-              onMostrarControles: () -> Unit
+              onAumentarVelocidad: () -> Unit,
+              onReducirVelocidad: () -> Unit
           ) {
               Column(
                   modifier = Modifier
@@ -482,13 +465,13 @@ jobs:
                       horizontalArrangement = Arrangement.Center,
                       verticalAlignment = Alignment.CenterVertically
                   ) {
-                      IconButton(onClick = onToggleAutoScroll) {
-                          Icon(
-                              imageVector = if (autoScrollActivo) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                              contentDescription = if (autoScrollActivo) "Pausar" else "Auto-scroll",
-                              tint = Color.White
+                      Button(onClick = onToggleAutoScroll) {
+                          Text(
+                              text = if (autoScrollActivo) "PAUSAR" else "AUTO ▶",
+                              color = Color.White
                           )
                       }
+                      Spacer(Modifier.padding(horizontal = 8.dp))
                       Text(
                           text = "$currentPage / $totalPages",
                           color = Color.White,
@@ -497,19 +480,24 @@ jobs:
                       )
                   }
 
-                  if (mostrarControles) {
-                      Spacer(Modifier.height(8.dp))
+                  Spacer(Modifier.height(8.dp))
+
+                  Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.Center,
+                      verticalAlignment = Alignment.CenterVertically
+                  ) {
+                      Button(onClick = onReducirVelocidad) {
+                          Text("-", color = Color.White)
+                      }
                       Text(
-                          text = "Velocidad: ${String.format("%.1f", velocidad)}x",
+                          text = "  Vel: ${velocidad}x  ",
                           color = Color.White,
-                          style = MaterialTheme.typography.bodySmall
+                          style = MaterialTheme.typography.bodyMedium
                       )
-                      Slider(
-                          value = velocidad,
-                          onValueChange = onVelocidadChanged,
-                          valueRange = 0.5f..10f,
-                          modifier = Modifier.fillMaxWidth()
-                      )
+                      Button(onClick = onAumentarVelocidad) {
+                          Text("+", color = Color.White)
+                      }
                   }
 
                   LinearProgressIndicator(
@@ -527,7 +515,7 @@ jobs:
       - name: Compilar APK
         run: |
           cd lumi
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tail -50
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | grep -E "^e:|FAILURE|What went wrong|BUILD" | head -50
 
       - name: Verificar APK
         if: always()
