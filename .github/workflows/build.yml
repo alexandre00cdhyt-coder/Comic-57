@@ -1,4 +1,4 @@
-name: Compilar Lumi con icono H
+name: Compilar Lumi original
 
 on:
   push:
@@ -20,61 +20,53 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.2'
-
       - name: Dar permisos a gradlew
         run: chmod +x lumi/gradlew
 
-      - name: Cambiar nombre de la app a H
+      - name: Ver estructura del proyecto
         run: |
-          cd lumi
-          find . -name "strings.xml" -path "*/values/*" -exec sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">H<\/string>/g' {} \;
-          echo "Nombre cambiado"
-
-      - name: Instalar ImageMagick
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
-
-      - name: Reemplazar iconos (borrar webp y poner png H)
-        run: |
-          cd lumi
-          
-          # BORRAR todos los iconos originales de Lumi (png, webp y xml)
-          find app/src/main/res -name "ic_launcher*" -type f -delete
-          echo "Iconos originales borrados"
-          
-          # Crear iconos H nuevos
-          mkdir -p app/src/main/res/mipmap-mdpi
-          mkdir -p app/src/main/res/mipmap-hdpi
-          mkdir -p app/src/main/res/mipmap-xhdpi
-          mkdir -p app/src/main/res/mipmap-xxhdpi
-          mkdir -p app/src/main/res/mipmap-xxxhdpi
-          
-          convert -size 48x48 xc:"#1565C0" -fill white -gravity center -pointsize 36 -annotate +0+0 "H" app/src/main/res/mipmap-mdpi/ic_launcher.png
-          convert -size 72x72 xc:"#1565C0" -fill white -gravity center -pointsize 54 -annotate +0+0 "H" app/src/main/res/mipmap-hdpi/ic_launcher.png
-          convert -size 96x96 xc:"#1565C0" -fill white -gravity center -pointsize 72 -annotate +0+0 "H" app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          convert -size 144x144 xc:"#1565C0" -fill white -gravity center -pointsize 108 -annotate +0+0 "H" app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          convert -size 192x192 xc:"#1565C0" -fill white -gravity center -pointsize 144 -annotate +0+0 "H" app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          
-          echo "=== Iconos nuevos ==="
-          ls -la app/src/main/res/mipmap-*/ic_launcher.png
+          echo "=== Archivos en la raiz de lumi ==="
+          ls -la lumi/
+          echo ""
+          echo "=== Contenido de la carpeta app ==="
+          ls -la lumi/app/ 2>/dev/null || echo "No hay carpeta app"
+          echo ""
+          echo "=== Archivos build.gradle ==="
+          find lumi -name "build.gradle*" -maxdepth 3 2>/dev/null
+          echo ""
+          echo "=== Version de Gradle configurada ==="
+          cat lumi/gradle/wrapper/gradle-wrapper.properties 2>/dev/null || echo "No se encontro wrapper"
 
       - name: Compilar APK
         run: |
           cd lumi
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../build_log.txt
+
+      - name: Ver log completo
+        if: always()
+        run: |
+          echo "=== Ultimas 50 lineas del log ==="
+          tail -50 build_log.txt
 
       - name: Verificar APK
+        if: always()
         run: |
           echo "=== Buscando APK ==="
-          find lumi -name "*.apk" -type f
+          find lumi -name "*.apk" -type f 2>/dev/null || echo "No se encontro ningun APK"
           ls -la lumi/app/build/outputs/apk/debug/ 2>/dev/null || echo "No se encontro carpeta debug"
 
       - name: Subir APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Lumi-H-APK
+          name: Lumi-Original-APK
           path: lumi/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          if-no-files-found: warn
+
+      - name: Subir log de compilacion
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build_log.txt
+          if-no-files-found: warn
