@@ -1,4 +1,4 @@
-name: Ver PageExtractor y ReaderViewModel
+name: Compilar Lumi con carpetas de imagenes v2
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  inspect:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,32 +14,667 @@ jobs:
         run: |
           git clone https://github.com/AmiiGood/Lumi.git lumi
 
-      - name: PageExtractor.kt
-        run: |
-          echo "========== PageExtractor.kt =========="
-          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/reader/PageExtractor.kt"
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-      - name: PageRef.kt
-        run: |
-          echo "========== PageRef.kt =========="
-          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/reader/PageRef.kt"
+      - name: Dar permisos a gradlew
+        run: chmod +x lumi/gradlew
 
-      - name: ReaderViewModel.kt
+      - name: Anadir coil-gif al build.gradle
         run: |
-          echo "========== ReaderViewModel.kt =========="
-          cat "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/ReaderViewModel.kt"
+          cd lumi
+          GRADLE_FILE=$(find . -name "build.gradle" -path "*/app/*" | head -1)
+          if [ -n "$GRADLE_FILE" ]; then
+            if ! grep -q "coil-gif" "$GRADLE_FILE"; then
+              sed -i 's|dependencies {|dependencies {\n    implementation "io.coil-kt:coil-gif:2.5.0"|' "$GRADLE_FILE"
+            fi
+          fi
 
-      - name: Copiar a artifact
+      - name: Reemplazar MediaFormat (anadir IMAGE_FOLDER)
         run: |
-          mkdir -p archivos_reader
-          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/reader/PageExtractor.kt" archivos_reader/
-          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/reader/PageRef.kt" archivos_reader/
-          cp "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/ReaderViewModel.kt" archivos_reader/
-          ls -la archivos_reader/
+          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/model/MediaItem.kt" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.data.model
 
-      - name: Subir archivos
+          data class MediaItem(
+              val id: String,
+              val title: String,
+              val author: String?,
+              val coverPath: String?,
+              val filePath: String,
+              val format: MediaFormat,
+              val type: MediaType,
+              val collection: String?,
+              val pageCount: Int,
+              val currentPage: Int = 0,
+              val lastReadAt: Long? = null,
+              val addedAt: Long,
+              val metadata: ItemMetadata = ItemMetadata()
+          )
+
+          data class ItemMetadata(
+              val series: String? = null,
+              val number: String? = null,
+              val volume: String? = null,
+              val summary: String? = null,
+              val publisher: String? = null,
+              val year: Int? = null,
+              val genres: List<String> = emptyList(),
+              val language: String? = null,
+              val isbn: String? = null,
+              val writer: String? = null,
+              val artist: String? = null
+          )
+
+          enum class MediaFormat {
+              CBZ, CBR, EPUB, PDF, IMAGE_FOLDER
+          }
+
+          enum class MediaType {
+              MANGA, COMIC, BOOK, UNKNOWN
+          }
+          KOTLIN_EOF
+
+      - name: Reemplazar FormatDetector.kt
+        run: |
+          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/util/FormatDetector.kt" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.util
+
+          import io.github.amiigood.lumi.lumi.data.model.MediaFormat
+          import io.github.amiigood.lumi.lumi.data.model.MediaType
+
+          object FormatDetector {
+
+              val imageExtensions = listOf(
+                  ".jpg", ".jpeg", ".png", ".gif", ".webp",
+                  ".bmp", ".avif", ".heic", ".heif", ".tiff", ".tif"
+              )
+
+              fun isImageFile(fileName: String): Boolean {
+                  val lower = fileName.lowercase()
+                  return imageExtensions.any { lower.endsWith(it) }
+              }
+
+              fun detectFormat(fileName: String): MediaFormat? {
+                  val lower = fileName.lowercase()
+                  return when {
+                      lower.endsWith(".cbz") -> MediaFormat.CBZ
+                      lower.endsWith(".cbr") -> MediaFormat.CBR
+                      lower.endsWith(".zip") -> MediaFormat.CBZ
+                      lower.endsWith(".rar") -> MediaFormat.CBR
+                      lower.endsWith(".epub") -> MediaFormat.EPUB
+                      lower.endsWith(".pdf") -> MediaFormat.PDF
+                      else -> null
+                  }
+              }
+
+              fun inferTypeFromPath(parentFolders: List<String>, format: MediaFormat): MediaType {
+                  val joined = parentFolders.joinToString("/").lowercase()
+                  return when {
+                      joined.contains("manga") -> MediaType.MANGA
+                      joined.contains("comic") -> MediaType.COMIC
+                      joined.contains("manhwa") -> MediaType.MANGA
+                      joined.contains("manhua") -> MediaType.MANGA
+                      joined.contains("libro") || joined.contains("book") -> MediaType.BOOK
+                      format == MediaFormat.EPUB -> MediaType.BOOK
+                      format == MediaFormat.CBZ || format == MediaFormat.CBR -> MediaType.COMIC
+                      else -> MediaType.UNKNOWN
+                  }
+              }
+          }
+          KOTLIN_EOF
+
+      - name: Reemplazar LibraryScanner.kt (usar IMAGE_FOLDER)
+        run: |
+          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/scanner/LibraryScanner.kt" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.data.scanner
+
+          import android.content.Context
+          import android.net.Uri
+          import androidx.documentfile.provider.DocumentFile
+          import io.github.amiigood.lumi.lumi.data.model.MediaFormat
+          import io.github.amiigood.lumi.lumi.data.model.MediaItem
+          import io.github.amiigood.lumi.lumi.data.parser.CbrParser
+          import io.github.amiigood.lumi.lumi.data.parser.CbzParser
+          import io.github.amiigood.lumi.lumi.data.parser.EpubParser
+          import io.github.amiigood.lumi.lumi.data.parser.MediaParser
+          import io.github.amiigood.lumi.lumi.data.parser.PdfParser
+          import io.github.amiigood.lumi.lumi.util.FormatDetector
+          import dagger.hilt.android.qualifiers.ApplicationContext
+          import io.github.amiigood.lumi.lumi.data.model.ItemMetadata
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import java.security.MessageDigest
+          import javax.inject.Inject
+          import javax.inject.Singleton
+          import kotlinx.coroutines.ensureActive
+          import kotlin.coroutines.coroutineContext
+
+          private data class ScannedFile(
+              val docFile: DocumentFile,
+              val format: MediaFormat,
+              val parentFolders: List<String>
+          )
+
+          private data class ScannedFolder(
+              val docFolder: DocumentFile,
+              val imageCount: Int,
+              val parentFolders: List<String>
+          )
+
+          @Singleton
+          class LibraryScanner @Inject constructor(
+              @ApplicationContext private val context: Context,
+              private val cbzParser: CbzParser,
+              private val cbrParser: CbrParser,
+              private val epubParser: EpubParser,
+              private val pdfParser: PdfParser
+          ) {
+
+              suspend fun scan(rootUri: Uri): List<MediaItem> = withContext(Dispatchers.IO) {
+                  val root = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext emptyList()
+                  val scannedFiles = mutableListOf<ScannedFile>()
+                  val scannedFolders = mutableListOf<ScannedFolder>()
+                  walk(root, emptyList(), scannedFiles, scannedFolders)
+
+                  val itemsFromFiles = scannedFiles.map { it.toMediaItem() }
+                  val itemsFromFolders = scannedFolders.map { it.toFolderMediaItem() }
+                  itemsFromFiles + itemsFromFolders
+              }
+
+              private suspend fun walk(
+                  dir: DocumentFile,
+                  parents: List<String>,
+                  filesOut: MutableList<ScannedFile>,
+                  foldersOut: MutableList<ScannedFolder>
+              ) {
+                  coroutineContext.ensureActive()
+                  val children = dir.listFiles()
+                  var imageCount = 0
+                  var subfolderCount = 0
+
+                  for (child in children) {
+                      coroutineContext.ensureActive()
+                      when {
+                          child.isDirectory -> {
+                              subfolderCount++
+                              val newParents = parents + (child.name ?: "")
+                              walk(child, newParents, filesOut, foldersOut)
+                          }
+                          child.isFile -> {
+                              val name = child.name ?: continue
+                              if (FormatDetector.isImageFile(name)) {
+                                  imageCount++
+                              }
+                              val format = FormatDetector.detectFormat(name) ?: continue
+                              filesOut.add(ScannedFile(child, format, parents))
+                          }
+                      }
+                  }
+
+                  if (imageCount > 0 && subfolderCount == 0 && parents.isNotEmpty()) {
+                      foldersOut.add(ScannedFolder(dir, imageCount, parents))
+                  }
+              }
+
+              private suspend fun ScannedFile.toMediaItem(): MediaItem {
+                  coroutineContext.ensureActive()
+                  val name = docFile.name ?: "Untitled"
+                  val fallbackTitle = name.substringBeforeLast('.')
+                  val type = FormatDetector.inferTypeFromPath(parentFolders, format)
+                  val parser: MediaParser = when (format) {
+                      MediaFormat.CBZ -> cbzParser
+                      MediaFormat.CBR -> cbrParser
+                      MediaFormat.EPUB -> epubParser
+                      MediaFormat.PDF -> pdfParser
+                      MediaFormat.IMAGE_FOLDER -> cbzParser
+                  }
+
+                  val parsed = runCatching { parser.extractMetadata(docFile.uri) }
+                      .getOrNull()
+
+                  val collection = parsed?.extra?.series ?: parentFolders.lastOrNull()
+
+                  return MediaItem(
+                      id = hashId(docFile.uri.toString()),
+                      title = parsed?.title ?: fallbackTitle,
+                      author = parsed?.author,
+                      coverPath = null,
+                      filePath = docFile.uri.toString(),
+                      format = format,
+                      type = type,
+                      collection = collection,
+                      pageCount = parsed?.pageCount ?: 0,
+                      currentPage = 0,
+                      lastReadAt = null,
+                      addedAt = System.currentTimeMillis(),
+                      metadata = parsed?.extra ?: ItemMetadata()
+                  )
+              }
+
+              private suspend fun ScannedFolder.toFolderMediaItem(): MediaItem {
+                  coroutineContext.ensureActive()
+                  val folderName = docFolder.name ?: "Carpeta"
+                  val type = FormatDetector.inferTypeFromPath(parentFolders, MediaFormat.IMAGE_FOLDER)
+                  val collection = parentFolders.lastOrNull()
+
+                  return MediaItem(
+                      id = hashId(docFolder.uri.toString()),
+                      title = folderName,
+                      author = null,
+                      coverPath = null,
+                      filePath = docFolder.uri.toString(),
+                      format = MediaFormat.IMAGE_FOLDER,
+                      type = type,
+                      collection = collection,
+                      pageCount = imageCount,
+                      currentPage = 0,
+                      lastReadAt = null,
+                      addedAt = System.currentTimeMillis(),
+                      metadata = ItemMetadata()
+                  )
+              }
+
+              private fun hashId(input: String): String {
+                  val bytes = MessageDigest.getInstance("SHA-1").digest(input.toByteArray())
+                  return bytes.joinToString("") { "%02x".format(it) }.take(16)
+              }
+          }
+          KOTLIN_EOF
+
+      - name: Reemplazar PageExtractor.kt (leer carpetas)
+        run: |
+          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/data/reader/PageExtractor.kt" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.data.reader
+
+          import android.content.Context
+          import android.net.Uri
+          import androidx.documentfile.provider.DocumentFile
+          import com.github.junrar.Archive
+          import io.github.amiigood.lumi.lumi.data.model.MediaFormat
+          import dagger.hilt.android.qualifiers.ApplicationContext
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import java.io.File
+          import java.util.zip.ZipInputStream
+          import javax.inject.Inject
+          import javax.inject.Singleton
+
+          @Singleton
+          class PageExtractor @Inject constructor(
+              @ApplicationContext private val context: Context
+          ) {
+
+              private val imageExtensions = listOf(
+                  ".jpg", ".jpeg", ".png", ".gif", ".webp",
+                  ".bmp", ".avif", ".heic", ".heif", ".tiff", ".tif"
+              )
+
+              private val pagesRoot: File by lazy {
+                  File(context.cacheDir, "pages").apply { mkdirs() }
+              }
+
+              suspend fun extractImagePages(itemId: String, uri: Uri, format: MediaFormat): List<File> = withContext(Dispatchers.IO) {
+                  val target = File(pagesRoot, itemId)
+
+                  if (target.exists() && target.listFiles()?.isNotEmpty() == true) {
+                      return@withContext target.listFiles()!!
+                          .filter { it.isFile }
+                          .sortedWith(naturalOrderFile())
+                  }
+
+                  target.mkdirs()
+                  try {
+                      when (format) {
+                          MediaFormat.CBZ -> extractCbz(uri, target)
+                          MediaFormat.CBR -> extractCbr(uri, target)
+                          MediaFormat.IMAGE_FOLDER -> extractFolder(uri, target)
+                          else -> emptyList()
+                      }
+                  } catch (e: UnsupportedRarException) {
+                      target.deleteRecursively()
+                      throw e
+                  } catch (e: Exception) {
+                      target.deleteRecursively()
+                      emptyList()
+                  }
+              }
+
+              private fun extractFolder(uri: Uri, target: File): List<File> {
+                  val docFolder = DocumentFile.fromTreeUri(context, uri)
+                      ?: DocumentFile.fromSingleUri(context, uri)
+                      ?: return emptyList()
+
+                  val files = mutableListOf<File>()
+
+                  // Si es una carpeta, listar sus hijos
+                  val children = docFolder.listFiles()
+                  for (child in children) {
+                      if (!child.isFile) continue
+                      val name = child.name ?: continue
+                      if (!name.isImage()) continue
+
+                      val safeName = name.replace('/', '_').replace('\\', '_')
+                      val out = File(target, safeName)
+                      try {
+                          context.contentResolver.openInputStream(child.uri)?.use { input ->
+                              out.outputStream().use { fos -> input.copyTo(fos) }
+                          }
+                          if (out.exists() && out.length() > 0) {
+                              files.add(out)
+                          }
+                      } catch (e: Exception) {
+                          // Ignorar imagen que no se pudo copiar
+                      }
+                  }
+
+                  return files.sortedWith(naturalOrderFile())
+              }
+
+              private fun extractCbz(uri: Uri, target: File): List<File> {
+                  val files = mutableListOf<File>()
+                  context.contentResolver.openInputStream(uri)?.use { input ->
+                      ZipInputStream(input).use { zip ->
+                          var entry = zip.nextEntry
+                          while (entry != null) {
+                              if (!entry.isDirectory && entry.name.isImage()) {
+                                  val safeName = entry.name.replace('/', '_').replace('\\', '_')
+                                  val out = File(target, safeName)
+                                  out.outputStream().use { fos -> zip.copyTo(fos) }
+                                  files.add(out)
+                              }
+                              entry = zip.nextEntry
+                          }
+                      }
+                  }
+                  return files.sortedWith(naturalOrderFile())
+              }
+
+              private fun extractCbr(uri: Uri, target: File): List<File> {
+                  val temp = File.createTempFile("cbr_", ".rar", context.cacheDir)
+                  try {
+                      context.contentResolver.openInputStream(uri)?.use { input ->
+                          temp.outputStream().use { out -> input.copyTo(out) }
+                      } ?: return emptyList()
+
+                      if (isRar5(temp)) {
+                          throw UnsupportedRarException()
+                      }
+
+                      val files = mutableListOf<File>()
+                      Archive(temp).use { archive ->
+                          archive.fileHeaders
+                              .filter { !it.isDirectory && it.fileName.isImage() }
+                              .forEach { header ->
+                                  val safeName = header.fileName.replace('/', '_').replace('\\', '_')
+                                  val out = File(target, safeName)
+                                  out.outputStream().use { fos ->
+                                      archive.extractFile(header, fos)
+                                  }
+                                  files.add(out)
+                              }
+                      }
+                      return files.sortedWith(naturalOrderFile())
+                  } finally {
+                      temp.delete()
+                  }
+              }
+
+              private fun isRar5(file: File): Boolean {
+                  return try {
+                      file.inputStream().use { input ->
+                          val sig = ByteArray(8)
+                          if (input.read(sig) < 8) return false
+                          sig[0] == 0x52.toByte() && sig[1] == 0x61.toByte() &&
+                                  sig[2] == 0x72.toByte() && sig[3] == 0x21.toByte() &&
+                                  sig[4] == 0x1A.toByte() && sig[5] == 0x07.toByte() &&
+                                  sig[6] == 0x01.toByte()
+                      }
+                  } catch (e: Exception) {
+                      false
+                  }
+              }
+
+              suspend fun clearCache(itemId: String) = withContext(Dispatchers.IO) {
+                  File(pagesRoot, itemId).deleteRecursively()
+                  File(context.cacheDir, "pdf_pages/$itemId").deleteRecursively()
+              }
+
+              private fun String.isImage() = imageExtensions.any { this.lowercase().endsWith(it) }
+
+              private fun naturalOrderFile(): Comparator<File> = Comparator { a, b ->
+                  naturalOrder().compare(a.name, b.name)
+              }
+
+              private fun naturalOrder(): Comparator<String> = Comparator { a, b ->
+                  val regex = Regex("(\\d+)|(\\D+)")
+                  val ta = regex.findAll(a).toList()
+                  val tb = regex.findAll(b).toList()
+                  val len = minOf(ta.size, tb.size)
+                  for (i in 0 until len) {
+                      val sa = ta[i].value
+                      val sb = tb[i].value
+                      val cmp = if (sa.first().isDigit() && sb.first().isDigit()) {
+                          sa.toLong().compareTo(sb.toLong())
+                      } else {
+                          sa.compareTo(sb)
+                      }
+                      if (cmp != 0) return@Comparator cmp
+                  }
+                  ta.size - tb.size
+              }
+          }
+
+          class UnsupportedRarException : Exception("RAR5 no soportado. Convierte el archivo a CBZ o RAR4.")
+          KOTLIN_EOF
+
+      - name: Reemplazar ReaderViewModel.kt (anadir IMAGE_FOLDER)
+        run: |
+          cat > "lumi/app/src/main/java/io.github.amiigood.lumi/lumi/ui/reader/ReaderViewModel.kt" << 'KOTLIN_EOF'
+          package io.github.amiigood.lumi.lumi.ui.reader
+
+          import android.net.Uri
+          import androidx.lifecycle.SavedStateHandle
+          import androidx.lifecycle.ViewModel
+          import androidx.lifecycle.viewModelScope
+          import io.github.amiigood.lumi.lumi.data.local.LumiPreferences
+          import io.github.amiigood.lumi.lumi.data.model.MediaFormat
+          import io.github.amiigood.lumi.lumi.data.model.MediaItem
+          import io.github.amiigood.lumi.lumi.data.model.ReadingMode
+          import io.github.amiigood.lumi.lumi.data.reader.EpubBookExtractor
+          import io.github.amiigood.lumi.lumi.data.reader.PageExtractor
+          import io.github.amiigood.lumi.lumi.data.reader.PageRef
+          import io.github.amiigood.lumi.lumi.data.reader.PdfPageSource
+          import io.github.amiigood.lumi.lumi.data.reader.PdfPageSourceFactory
+          import io.github.amiigood.lumi.lumi.data.repository.LibraryRepository
+          import dagger.hilt.android.lifecycle.HiltViewModel
+          import io.github.amiigood.lumi.lumi.data.reader.UnsupportedRarException
+          import kotlinx.coroutines.GlobalScope
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.flow.asStateFlow
+          import kotlinx.coroutines.flow.firstOrNull
+          import kotlinx.coroutines.flow.update
+          import kotlinx.coroutines.launch
+          import java.io.File
+          import javax.inject.Inject
+
+          sealed class ReaderUiState {
+              data object Loading : ReaderUiState()
+              data class Error(val message: String) : ReaderUiState()
+              data class ImageReady(
+                  val item: MediaItem,
+                  val pages: List<PageRef>,
+                  val initialPage: Int,
+                  val showTutorial: Boolean,
+                  val mode: ReadingMode
+              ) : ReaderUiState()
+              data class EpubReady(
+                  val item: MediaItem,
+                  val htmlFile: File,
+                  val initialProgress: Int
+              ) : ReaderUiState()
+              data class Unsupported(val format: MediaFormat) : ReaderUiState()
+          }
+
+          @HiltViewModel
+          class ReaderViewModel @Inject constructor(
+              savedStateHandle: SavedStateHandle,
+              private val repository: LibraryRepository,
+              private val pageExtractor: PageExtractor,
+              private val epubExtractor: EpubBookExtractor,
+              private val pdfPageSourceFactory: PdfPageSourceFactory,
+              private val preferences: LumiPreferences
+          ) : ViewModel() {
+
+              private val itemId: String = savedStateHandle.get<String>("itemId") ?: ""
+
+              private val savedStateKey = "current_page_$itemId"
+              private var savedStateHandleRef = savedStateHandle
+
+              private fun getSavedPage(): Int? = savedStateHandleRef.get<Int>(savedStateKey)
+              private fun setSavedPage(page: Int) {
+                  savedStateHandleRef[savedStateKey] = page
+              }
+
+              private val _state = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
+              val state: StateFlow<ReaderUiState> = _state.asStateFlow()
+
+              private var pdfSource: PdfPageSource? = null
+
+              init {
+                  load()
+              }
+
+              private fun load() {
+                  viewModelScope.launch {
+                      val item = repository.getItem(itemId)
+                      if (item == null) {
+                          _state.value = ReaderUiState.Error("Item no encontrado")
+                          return@launch
+                      }
+
+                      when (item.format) {
+                          MediaFormat.CBZ, MediaFormat.CBR, MediaFormat.IMAGE_FOLDER -> loadImagePages(item)
+                          MediaFormat.PDF -> loadPdf(item)
+                          MediaFormat.EPUB -> loadEpub(item)
+                      }
+                  }
+              }
+
+              private suspend fun loadImagePages(item: MediaItem) {
+                  try {
+                      val files = pageExtractor.extractImagePages(item.id, Uri.parse(item.filePath), item.format)
+                      if (files.isEmpty()) {
+                          _state.value = ReaderUiState.Error("No se pudieron extraer las paginas")
+                          return
+                      }
+                      val pages = files.map { PageRef.Direct(it) }
+                      emitImageReady(item, pages)
+                  } catch (e: UnsupportedRarException) {
+                      _state.value = ReaderUiState.Error(e.message ?: "Formato no soportado")
+                  } catch (e: Exception) {
+                      _state.value = ReaderUiState.Error("Error al abrir: ${e.message}")
+                  }
+              }
+
+              private suspend fun loadPdf(item: MediaItem) {
+                  val source = pdfPageSourceFactory.create(item.id, Uri.parse(item.filePath))
+                  pdfSource = source
+                  val total = source.open()
+                  if (total == 0) {
+                      _state.value = ReaderUiState.Error("PDF vacio o invalido")
+                      return
+                  }
+                  val pages = (0 until total).map { idx ->
+                      PageRef.LazyPdf(item.id, idx, source)
+                  }
+                  emitImageReady(item, pages)
+              }
+
+              private suspend fun emitImageReady(item: MediaItem, pages: List<PageRef>) {
+                  val tutorialSeen = preferences.readerTutorialDone.firstOrNull() ?: false
+                  val mode = preferences.readingMode(item.id).firstOrNull() ?: ReadingMode.PAGED
+                  val savedPage = getSavedPage()
+                      ?: preferences.progress(item.id).firstOrNull()
+                      ?: 0
+                  _state.value = ReaderUiState.ImageReady(
+                      item = item,
+                      pages = pages,
+                      initialPage = savedPage.coerceIn(0, pages.lastIndex),
+                      showTutorial = !tutorialSeen,
+                      mode = mode
+                  )
+              }
+
+              private suspend fun loadEpub(item: MediaItem) {
+                  val extracted = epubExtractor.extract(item.id, Uri.parse(item.filePath))
+                  if (extracted == null) {
+                      _state.value = ReaderUiState.Error("No se pudo abrir el EPUB")
+                  } else {
+                      val savedPage = getSavedPage()
+                          ?: preferences.progress(item.id).firstOrNull()
+                          ?: 0
+                      _state.value = ReaderUiState.EpubReady(
+                          item = item,
+                          htmlFile = extracted.htmlFile,
+                          initialProgress = savedPage
+                      )
+                  }
+              }
+
+              fun markTutorialSeen() {
+                  viewModelScope.launch {
+                      preferences.setReaderTutorialDone(true)
+                  }
+              }
+
+              fun toggleMode() {
+                  val current = _state.value
+                  if (current is ReaderUiState.ImageReady) {
+                      val newMode = if (current.mode == ReadingMode.PAGED) ReadingMode.WEBTOON else ReadingMode.PAGED
+                      _state.update { current.copy(mode = newMode) }
+                      viewModelScope.launch {
+                          preferences.setReadingMode(current.item.id, newMode)
+                      }
+                  }
+              }
+
+              fun saveProgress(currentPage: Int, totalPages: Int) {
+                  setSavedPage(currentPage)
+                  viewModelScope.launch {
+                      preferences.setProgress(itemId, currentPage, totalPages)
+                  }
+              }
+
+              override fun onCleared() {
+                  super.onCleared()
+                  val source = pdfSource
+                  if (source != null) {
+                      GlobalScope.launch { source.close() }
+                      pdfSource = null
+                  }
+              }
+          }
+          KOTLIN_EOF
+
+      - name: Compilar APK
+        run: |
+          cd lumi
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | grep -E "^e:|FAILURE|What went wrong|BUILD" | head -60
+
+      - name: Verificar APK
+        if: always()
+        run: |
+          echo "=== Buscando APK ==="
+          find lumi -name "*.apk" -type f 2>/dev/null || echo "No se encontro APK"
+
+      - name: Subir APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: archivos-reader
-          path: archivos_reader/
+          name: Lumi-CarpetasImagenes-APK
+          path: lumi/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
