@@ -1,4 +1,4 @@
-name: Ver build.gradle de Lumi
+name: Ver build.gradle.kts de Lumi
 
 on:
   push:
@@ -14,32 +14,16 @@ jobs:
         run: |
           git clone https://github.com/AmiiGood/Lumi.git lumi
 
-      - name: Listar archivos gradle
+      - name: Mostrar app/build.gradle.kts
         run: |
-          echo "=== Archivos gradle en el proyecto ==="
-          find lumi -name "*.gradle" -o -name "*.gradle.kts" | grep -v "/build/"
+          echo "========== app/build.gradle.kts =========="
+          cat "lumi/app/build.gradle.kts"
 
-      - name: Mostrar app/build.gradle
-        run: |
-          APP_GRADLE=$(find lumi -name "build.gradle" -path "*/app/*" | head -1)
-          echo "=== Archivo: $APP_GRADLE ==="
-          cat "$APP_GRADLE"
-
-      - name: Mostrar app/build.gradle.kts (si existe)
-        run: |
-          APP_GRADLE_KTS=$(find lumi -name "build.gradle.kts" -path "*/app/*" | head -1)
-          if [ -n "$APP_GRADLE_KTS" ]; then
-            echo "=== Archivo: $APP_GRADLE_KTS ==="
-            cat "$APP_GRADLE_KTS"
-          else
-            echo "No existe build.gradle.kts"
-          fi
-
-      - name: Mostrar gradle/libs.versions.toml (si existe)
+      - name: Mostrar libs.versions.toml (si existe)
         run: |
           TOML=$(find lumi -name "libs.versions.toml" | head -1)
           if [ -n "$TOML" ]; then
-            echo "=== Archivo: $TOML ==="
+            echo "========== $TOML =========="
             cat "$TOML"
           else
             echo "No existe libs.versions.toml"
@@ -48,12 +32,11 @@ jobs:
       - name: Copiar a artifact
         run: |
           mkdir -p archivos_gradle
-          APP_GRADLE=$(find lumi -name "build.gradle" -path "*/app/*" | head -1)
-          APP_GRADLE_KTS=$(find lumi -name "build.gradle.kts" -path "*/app/*" | head -1)
+          cp "lumi/app/build.gradle.kts" archivos_gradle/
           TOML=$(find lumi -name "libs.versions.toml" | head -1)
-          [ -n "$APP_GRADLE" ] && cp "$APP_GRADLE" archivos_gradle/
-          [ -n "$APP_GRADLE_KTS" ] && cp "$APP_GRADLE_KTS" archivos_gradle/
-          [ -n "$TOML" ] && cp "$TOML" archivos_gradle/
+          if [ -n "$TOML" ]; then
+            cp "$TOML" archivos_gradle/
+          fi
           ls -la archivos_gradle/
 
       - name: Subir archivos
