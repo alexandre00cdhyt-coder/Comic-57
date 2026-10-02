@@ -32,44 +32,33 @@ jobs:
         run: |
           cd lumi
           find . -name "strings.xml" -path "*/values/*" -exec sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">H<\/string>/g' {} \;
-          echo "Nombre cambiado. Verificando..."
-          grep -r "app_name" --include="strings.xml" . | head -5
+          echo "Nombre cambiado"
 
       - name: Instalar ImageMagick
         run: sudo apt-get update && sudo apt-get install -y imagemagick
 
-      - name: Generar icono H con ImageMagick
+      - name: Reemplazar iconos (borrar webp y poner png H)
         run: |
           cd lumi
           
-          # Ver donde estan los iconos actuales
-          echo "=== Iconos actuales ==="
-          find . -name "ic_launcher*" -type f 2>/dev/null | head -20
+          # BORRAR todos los iconos originales de Lumi (png, webp y xml)
+          find app/src/main/res -name "ic_launcher*" -type f -delete
+          echo "Iconos originales borrados"
           
-          # Crear iconos con la letra H para cada densidad
+          # Crear iconos H nuevos
           mkdir -p app/src/main/res/mipmap-mdpi
           mkdir -p app/src/main/res/mipmap-hdpi
           mkdir -p app/src/main/res/mipmap-xhdpi
           mkdir -p app/src/main/res/mipmap-xxhdpi
           mkdir -p app/src/main/res/mipmap-xxxhdpi
           
-          # Icono mdpi (48x48)
           convert -size 48x48 xc:"#1565C0" -fill white -gravity center -pointsize 36 -annotate +0+0 "H" app/src/main/res/mipmap-mdpi/ic_launcher.png
-          
-          # Icono hdpi (72x72)
           convert -size 72x72 xc:"#1565C0" -fill white -gravity center -pointsize 54 -annotate +0+0 "H" app/src/main/res/mipmap-hdpi/ic_launcher.png
-          
-          # Icono xhdpi (96x96)
           convert -size 96x96 xc:"#1565C0" -fill white -gravity center -pointsize 72 -annotate +0+0 "H" app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          
-          # Icono xxhdpi (144x144)
           convert -size 144x144 xc:"#1565C0" -fill white -gravity center -pointsize 108 -annotate +0+0 "H" app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          
-          # Icono xxxhdpi (192x192)
           convert -size 192x192 xc:"#1565C0" -fill white -gravity center -pointsize 144 -annotate +0+0 "H" app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           
-          # Verificar que se crearon
-          echo "=== Iconos generados ==="
+          echo "=== Iconos nuevos ==="
           ls -la app/src/main/res/mipmap-*/ic_launcher.png
 
       - name: Compilar APK
