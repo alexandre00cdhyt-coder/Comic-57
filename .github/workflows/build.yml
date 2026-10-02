@@ -24,23 +24,12 @@ jobs:
         with:
           gradle-version: '8.2'
 
-      - name: Crear keystore para firmar
-        run: |
-          keytool -genkeypair -v \
-            -keystore mi_clave.keystore \
-            -alias miclave \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass 123456 \
-            -keypass 123456 \
-            -dname "CN=GestorArchivos, OU=Dev, O=MiOrg, L=Ciudad, S=Estado, C=GT"
-
       - name: Limpiar estructura
         run: |
           rm -rf app build.gradle settings.gradle gradle.properties
           mkdir -p app/src/main/java/com/mangauniversal/app
           mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/mipmap-anydpi-v26
 
       - name: settings.gradle
@@ -82,7 +71,7 @@ jobs:
           kotlin.code.style=official
           EOF
 
-      - name: app/build.gradle con firma release
+      - name: app/build.gradle
         run: |
           cat > app/build.gradle << 'EOF'
           plugins {
@@ -98,27 +87,8 @@ jobs:
                   applicationId 'com.mangauniversal.app'
                   minSdk 24
                   targetSdk 34
-                  versionCode 3
-                  versionName '1.0.2'
-              }
-
-              signingConfigs {
-                  release {
-                      storeFile file("../mi_clave.keystore")
-                      storePassword "123456"
-                      keyAlias "miclave"
-                      keyPassword "123456"
-                  }
-              }
-
-              buildTypes {
-                  release {
-                      minifyEnabled false
-                      signingConfig signingConfigs.release
-                  }
-                  debug {
-                      signingConfig signingConfigs.release
-                  }
+                  versionCode 4
+                  versionName '1.0.3'
               }
 
               compileOptions {
@@ -203,7 +173,6 @@ jobs:
           cat > app/src/main/res/values/colors.xml << 'EOF'
           <resources>
               <color name="azul">#1565C0</color>
-              <color name="celeste">#00ACC1</color>
               <color name="ic_launcher_background">#1565C0</color>
               <color name="ic_launcher_foreground">#FFFFFF</color>
           </resources>
@@ -221,7 +190,6 @@ jobs:
 
       - name: activity_main.xml
         run: |
-          mkdir -p app/src/main/res/layout
           cat > app/src/main/res/layout/activity_main.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -430,18 +398,18 @@ jobs:
           }
           EOF
 
-      - name: Compilar APK release
-        run: gradle assembleRelease --no-daemon --stacktrace
+      - name: Compilar APK debug
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Verificar APK
         run: |
           echo "=== APK generado ==="
           find . -name "*.apk" -type f
-          ls -la app/build/outputs/apk/release/
+          ls -la app/build/outputs/apk/debug/ 2>/dev/null || echo "No se creo la carpeta debug"
 
       - name: Subir APK
         uses: actions/upload-artifact@v4
         with:
-          name: GestorArchivos-RELEASE
-          path: app/build/outputs/apk/release/*.apk
+          name: GestorArchivos-APK
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
