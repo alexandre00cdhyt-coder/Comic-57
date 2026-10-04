@@ -181,9 +181,9 @@ fun FolderFlowScreen() {
     }
 }
 
-private enum class FilterMode {
-    ALL,          // Todas las carpetas
-    FAVORITES_ONLY // Solo favoritas
+enum class FilterMode {
+    ALL,
+    FAVORITES_ONLY
 }
 
 @Composable
