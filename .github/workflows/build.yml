@@ -3,6 +3,7 @@ package io.github.amiigood.lumi.lumi.ui.reader
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.splineBasedDecay
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -37,6 +38,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -97,7 +99,7 @@ fun ZoomablePage(
             .pointerInput(page.key) {
                 val velocityTracker = VelocityTracker()
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
+                    awaitFirstDown(requireUnconsumed = false)
                     velocityTracker.resetTracking()
                     var lastScale = scaleAnim.value
 
@@ -154,15 +156,13 @@ fun ZoomablePage(
                         if (abs(vx) > 50f || abs(vy) > 50f) {
                             scope.launch {
                                 offsetAnim.animateDecay(
-                                    initialVelocity = androidx.compose.ui.unit.Velocity(vx, vy),
-                                    animationSpec = androidx.compose.animation.core
-                                        .splineBasedDecay(this@pointerInput)
+                                    initialVelocity = Velocity(vx, vy),
+                                    animationSpec = splineBasedDecay(this@pointerInput)
                                 ) {
-                                    // Detenemos la inercia si llegamos al límite del clamp.
+                                    // Si el valor actual excede el clamp, detenemos la inercia.
                                     val clamped = clampOffset(value, scaleAnim.value)
                                     if (clamped != value) {
-                                        // Forzamos el valor al límite y cancelamos.
-                                        updateBounds(clamped)
+                                        cancelAnimation()
                                     }
                                 }
                             }
