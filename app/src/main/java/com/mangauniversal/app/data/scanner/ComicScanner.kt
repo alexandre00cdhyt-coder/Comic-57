@@ -33,7 +33,6 @@ class ComicScanner(private val context: Context) {
             if (!root.exists() || !root.canRead()) return@withContext emptyList()
             walk(root, results, depth = 0)
         } catch (e: Exception) {
-            // Devolvemos lo que tengamos
         }
         results.sortedWith(compareBy(NaturalOrderComparator()) { it.title })
     }
@@ -49,15 +48,45 @@ class ComicScanner(private val context: Context) {
             return
         }
 
-        val imageFiles = children.filter { child ->
-            child.isFile && child.name.isImageFile()
-        }
+        // Separa imágenes sueltas y subcarpetas
+        val imageFiles = children.filter { it.isFile && it.name.isImageFile() }
+        val subDirs = children.filter { it.isDirectory && it.canRead() && it.name !in ignoredFolders }
 
-        if (imageFiles.size >= 3) {
+        // Si hay 3+ imágenes sueltas Y NO hay subcarpetas → tratar toda la carpeta como un cómic
+        if (imageFiles.size >= 3 && subDirs.isEmpty()) {
             results.add(folderToComic(dir, imageFiles))
             return
         }
 
+        // Si hay imágenes sueltas PERO también hay subcarpetas → hacemos ambos:
+        // 1) Tratar la carpeta como un cómic FOLDER por las imágenes sueltas
+        // 2) Recorrer las subcarpetas
+        if (imageFiles.size >= 3 && subDirs.isNotEmpty()) {
+            // Cómic FOLDER por las imágenes sueltas
+            results.add(folderToComic(dir, imageFiles))
+            // Y también recorremos las subcarpetas
+            for (child in subDirs) {
+                coroutineContext.ensureActive()
+                try {
+                    walk(child, results, depth + 1)
+                } catch (e: Exception) {
+                    continue
+                }
+            }
+            // Y también los archivos cómic sueltos que haya
+            for (child in children) {
+                if (child.isFile && child.name.isComicFile()) {
+                    try {
+                        results.add(fileToComic(child))
+                    } catch (e: Exception) {
+                        continue
+                    }
+                }
+            }
+            return
+        }
+
+        // Caso normal: recorrer subcarpetas y archivos cómic
         for (child in children) {
             coroutineContext.ensureActive()
 
