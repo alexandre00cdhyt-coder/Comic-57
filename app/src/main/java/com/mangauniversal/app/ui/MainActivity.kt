@@ -9,14 +9,19 @@ import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -32,7 +37,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangauniversal.app.data.folder.FolderConfig
@@ -41,7 +48,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -68,7 +74,6 @@ fun MangaUniversalApp() {
     }
 
     if (hasPermission) {
-        // Ya tiene permiso → mostrar flujo de carpetas
         FolderFlowScreen()
     } else {
         PermissionScreen(
@@ -86,8 +91,8 @@ fun FolderFlowScreen() {
 
     var folders by remember { mutableStateOf<List<FolderConfig>?>(null) }
     var showPicker by remember { mutableStateOf(false) }
+    var selectedFolder by remember { mutableStateOf<FolderConfig?>(null) }
 
-    // Escuchar cambios en las carpetas guardadas
     LaunchedEffect(Unit) {
         folderManager.folders.collectLatest { list ->
             folders = list
@@ -95,50 +100,41 @@ fun FolderFlowScreen() {
     }
 
     when {
-        folders == null -> {
-            // Cargando
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Cargando...",
-                    color = Color.White
-                )
-            }
+        folders == null -> Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Cargando...", color = Color.White)
         }
-        showPicker -> {
-            // Pantalla de elegir carpeta
-            FolderPickerScreen(
-                onFolderSelected = { path, name ->
-                    scope.launch {
-                        folderManager.addFolder(path, name)
-                        showPicker = false
-                    }
-                },
-                onCancel = {
+
+        showPicker -> FolderPickerScreen(
+            onFolderSelected = { path, name ->
+                scope.launch {
+                    folderManager.addFolder(path, name)
                     showPicker = false
                 }
-            )
-        }
-        folders!!.isEmpty() -> {
-            // No hay carpetas → botón para añadir
-            NoFoldersScreen(
-                onAddFolder = { showPicker = true }
-            )
-        }
-        else -> {
-            // Hay carpetas → placeholder (la biblioteca se hará en 1.7)
-            FoldersListScreen(
-                folders = folders!!,
-                onAddFolder = { showPicker = true },
-                onRemoveFolder = { path ->
-                    scope.launch {
-                        folderManager.removeFolder(path)
-                    }
-                }
-            )
-        }
+            },
+            onCancel = { showPicker = false }
+        )
+
+        selectedFolder != null -> LibraryScreen(
+            folderPath = selectedFolder!!.path,
+            folderName = selectedFolder!!.name,
+            onBack = { selectedFolder = null }
+        )
+
+        folders!!.isEmpty() -> NoFoldersScreen(
+            onAddFolder = { showPicker = true }
+        )
+
+        else -> FoldersHomeScreen(
+            folders = folders!!,
+            onFolderClick = { selectedFolder = it },
+            onAddFolder = { showPicker = true },
+            onRemoveFolder = { path ->
+                scope.launch { folderManager.removeFolder(path) }
+            }
+        )
     }
 }
 
@@ -151,98 +147,104 @@ fun NoFoldersScreen(onAddFolder: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "No tienes carpetas configuradas",
-            color = Color.White,
-            fontSize = 20.sp,
-            textAlign = TextAlign.Center
-        )
-
+        Text("No tienes carpetas configuradas", color = Color.White, fontSize = 20.sp)
         Spacer(modifier = Modifier.height(12.dp))
-
         Text(
-            text = "Elige una carpeta donde tengas tus cómics.\nLa app la escaneará y encontrará automáticamente CBZ, ZIP, RAR, PDF y carpetas con imágenes.",
+            "Elige una carpeta donde tengas tus cómics.",
             color = Color.White.copy(alpha = 0.7f),
             fontSize = 14.sp,
             textAlign = TextAlign.Center
         )
-
         Spacer(modifier = Modifier.height(32.dp))
-
-        Button(
-            onClick = onAddFolder,
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Button(onClick = onAddFolder, modifier = Modifier.fillMaxWidth()) {
             Text("➕ Añadir carpeta de cómics")
         }
     }
 }
 
 @Composable
-fun FoldersListScreen(
+fun FoldersHomeScreen(
     folders: List<FolderConfig>,
+    onFolderClick: (FolderConfig) -> Unit,
     onAddFolder: () -> Unit,
     onRemoveFolder: (String) -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp)
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         Text(
-            text = "📚 Carpetas configuradas",
+            "📚 Carpetas configuradas",
             color = Color.White,
-            fontSize = 20.sp
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold
         )
-
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "Toca una carpeta para ver los cómics dentro:",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 12.sp
+        )
         Spacer(modifier = Modifier.height(16.dp))
 
         folders.forEach { folder ->
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp)
+                    .clickable { onFolderClick(folder) }
+                    .background(Color(0xFF1A1A1A))
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "📁 ${folder.name}",
-                    color = Color.White,
-                    fontSize = 16.sp
-                )
-                Text(
-                    text = folder.path,
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 11.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Button(
-                    onClick = { onRemoveFolder(folder.path) }
-                ) {
-                    Text("Eliminar")
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "📁 ${folder.name}",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        folder.path,
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
+                Text(
+                    "›",
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Button(
+                onClick = { onRemoveFolder(folder.path) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("🗑 Eliminar", fontSize = 12.sp)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = onAddFolder,
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Button(onClick = onAddFolder, modifier = Modifier.fillMaxWidth()) {
             Text("➕ Añadir otra carpeta")
         }
     }
 }
 
-// =====================================================
-// Pantalla de permisos (ya existente)
-// =====================================================
-
 fun checkStoragePermission(): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         Environment.isExternalStorageManager()
-    } else {
-        true
-    }
+    } else true
 }
 
 fun openAllFilesSettings(packageName: String, context: Context) {
@@ -261,10 +263,7 @@ fun openAllFilesSettings(packageName: String, context: Context) {
 }
 
 @Composable
-fun PermissionScreen(
-    onOpenSettings: () -> Unit,
-    onCheckAgain: () -> Unit
-) {
+fun PermissionScreen(onOpenSettings: () -> Unit, onCheckAgain: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -272,40 +271,20 @@ fun PermissionScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "Acceso a archivos",
-            color = Color.White,
-            fontSize = 24.sp,
-            textAlign = TextAlign.Center
-        )
-
+        Text("Acceso a archivos", color = Color.White, fontSize = 24.sp)
         Spacer(modifier = Modifier.height(24.dp))
-
         Text(
-            text = "Para escanear tus cómics, la app necesita acceso a todos los archivos.\n\n" +
-                    "1. Toca \"Abrir ajustes\"\n" +
-                    "2. Activa \"Permitir acceso a todos los archivos\"\n" +
-                    "3. Vuelve a la app y toca \"Ya di el permiso\"",
+            "Para escanear tus cómics, la app necesita acceso a todos los archivos.",
             color = Color.White.copy(alpha = 0.8f),
             fontSize = 16.sp,
             textAlign = TextAlign.Center
         )
-
         Spacer(modifier = Modifier.height(32.dp))
-
-        Button(
-            onClick = onOpenSettings,
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
             Text("Abrir ajustes")
         }
-
         Spacer(modifier = Modifier.height(12.dp))
-
-        Button(
-            onClick = onCheckAgain,
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Button(onClick = onCheckAgain, modifier = Modifier.fillMaxWidth()) {
             Text("Ya di el permiso")
         }
     }
