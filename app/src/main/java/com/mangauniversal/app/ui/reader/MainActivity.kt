@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -28,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,10 +35,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mangauniversal.app.data.model.Comic
-import com.mangauniversal.app.data.scanner.ComicScanner
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.mangauniversal.app.data.folder.FolderConfig
+import com.mangauniversal.app.data.folder.FolderManager
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -69,7 +68,8 @@ fun MangaUniversalApp() {
     }
 
     if (hasPermission) {
-        LibraryScreen()
+        // Ya tiene permiso → mostrar flujo de carpetas
+        FolderFlowScreen()
     } else {
         PermissionScreen(
             onOpenSettings = { openAllFilesSettings(context.packageName, context) },
@@ -77,6 +77,165 @@ fun MangaUniversalApp() {
         )
     }
 }
+
+@Composable
+fun FolderFlowScreen() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val folderManager = remember { FolderManager(context) }
+
+    var folders by remember { mutableStateOf<List<FolderConfig>?>(null) }
+    var showPicker by remember { mutableStateOf(false) }
+
+    // Escuchar cambios en las carpetas guardadas
+    LaunchedEffect(Unit) {
+        folderManager.folders.collectLatest { list ->
+            folders = list
+        }
+    }
+
+    when {
+        folders == null -> {
+            // Cargando
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Cargando...",
+                    color = Color.White
+                )
+            }
+        }
+        showPicker -> {
+            // Pantalla de elegir carpeta
+            FolderPickerScreen(
+                onFolderSelected = { path, name ->
+                    scope.launch {
+                        folderManager.addFolder(path, name)
+                        showPicker = false
+                    }
+                },
+                onCancel = {
+                    showPicker = false
+                }
+            )
+        }
+        folders!!.isEmpty() -> {
+            // No hay carpetas → botón para añadir
+            NoFoldersScreen(
+                onAddFolder = { showPicker = true }
+            )
+        }
+        else -> {
+            // Hay carpetas → placeholder (la biblioteca se hará en 1.7)
+            FoldersListScreen(
+                folders = folders!!,
+                onAddFolder = { showPicker = true },
+                onRemoveFolder = { path ->
+                    scope.launch {
+                        folderManager.removeFolder(path)
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun NoFoldersScreen(onAddFolder: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "No tienes carpetas configuradas",
+            color = Color.White,
+            fontSize = 20.sp,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = "Elige una carpeta donde tengas tus cómics.\nLa app la escaneará y encontrará automáticamente CBZ, ZIP, RAR, PDF y carpetas con imágenes.",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = onAddFolder,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("➕ Añadir carpeta de cómics")
+        }
+    }
+}
+
+@Composable
+fun FoldersListScreen(
+    folders: List<FolderConfig>,
+    onAddFolder: () -> Unit,
+    onRemoveFolder: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+    ) {
+        Text(
+            text = "📚 Carpetas configuradas",
+            color = Color.White,
+            fontSize = 20.sp
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        folders.forEach { folder ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                Text(
+                    text = "📁 ${folder.name}",
+                    color = Color.White,
+                    fontSize = 16.sp
+                )
+                Text(
+                    text = folder.path,
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 11.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Button(
+                    onClick = { onRemoveFolder(folder.path) }
+                ) {
+                    Text("Eliminar")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Button(
+            onClick = onAddFolder,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("➕ Añadir otra carpeta")
+        }
+    }
+}
+
+// =====================================================
+// Pantalla de permisos (ya existente)
+// =====================================================
 
 fun checkStoragePermission(): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -148,94 +307,6 @@ fun PermissionScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Ya di el permiso")
-        }
-    }
-}
-
-@Composable
-fun LibraryScreen() {
-    val context = LocalContext.current
-    var comics by remember { mutableStateOf<List<Comic>?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-
-    LaunchedEffect(Unit) {
-        isLoading = true
-        comics = withContext(Dispatchers.IO) {
-            ComicScanner(context).scanAll()
-        }
-        isLoading = false
-    }
-
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            when {
-                isLoading -> {
-                    Text(
-                        text = "Escaneando almacenamiento...",
-                        color = Color.White,
-                        fontSize = 16.sp
-                    )
-                }
-                comics == null -> {
-                    Text(
-                        text = "Error al escanear",
-                        color = Color.Red,
-                        fontSize = 16.sp
-                    )
-                }
-                comics!!.isEmpty() -> {
-                    Text(
-                        text = "No se encontraron cómics",
-                        color = Color.White,
-                        fontSize = 16.sp
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Prueba a copiar archivos CBZ, ZIP, RAR, 7Z, PDF o carpetas con imágenes al teléfono",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
-                else -> {
-                    Text(
-                        text = "✅ Encontrados ${comics!!.size} cómics",
-                        color = Color.White,
-                        fontSize = 18.sp
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    comics!!.take(30).forEach { comic ->
-                        Text(
-                            text = "• ${comic.title}  [${comic.type}]",
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Start,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp)
-                        )
-                    }
-
-                    if (comics!!.size > 30) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "... y ${comics!!.size - 30} más",
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
         }
     }
 }
