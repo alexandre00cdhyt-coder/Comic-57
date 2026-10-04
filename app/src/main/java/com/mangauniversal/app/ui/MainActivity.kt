@@ -1,37 +1,30 @@
 package com.mangauniversal.app.ui
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.os.Bundle
-import android.os.Environment
-import android.provider.Settings
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,407 +36,440 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mangauniversal.app.data.folder.FolderConfig
-import com.mangauniversal.app.data.folder.FolderManager
-import kotlinx.coroutines.flow.collectLatest
+import coil.compose.AsyncImage
+import com.mangauniversal.app.data.model.Comic
+import com.mangauniversal.app.data.model.ComicType
+import com.mangauniversal.app.data.scanner.ComicScanner
+import com.mangauniversal.app.data.settings.ViewPreferences
+import com.mangauniversal.app.data.thumbnail.ThumbnailExtractor
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = Color.Black
-                ) {
-                    MangaUniversalApp()
-                }
-            }
-        }
-    }
-}
+import kotlinx.coroutines.withContext
 
 @Composable
-fun MangaUniversalApp() {
-    val context = LocalContext.current
-    var hasPermission by remember { mutableStateOf(checkStoragePermission()) }
-    var refreshKey by remember { mutableStateOf(0) }
-
-    LaunchedEffect(refreshKey) {
-        hasPermission = checkStoragePermission()
-    }
-
-    if (hasPermission) {
-        FolderFlowScreen()
-    } else {
-        PermissionScreen(
-            onOpenSettings = { openAllFilesSettings(context.packageName, context) },
-            onCheckAgain = { refreshKey++ }
-        )
-    }
-}
-
-@Composable
-fun FolderFlowScreen() {
+fun LibraryScreen(
+    folderPath: String,
+    folderName: String,
+    onBack: () -> Unit,
+    onComicClick: (Comic) -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val folderManager = remember { FolderManager(context) }
+    val prefs = remember { ViewPreferences(context) }
 
-    var folders by remember { mutableStateOf<List<FolderConfig>?>(null) }
-    var showPicker by remember { mutableStateOf(false) }
-    var selectedFolder by remember { mutableStateOf<FolderConfig?>(null) }
-    var folderToDelete by remember { mutableStateOf<FolderConfig?>(null) }
-    var filterMode by remember { mutableStateOf(FilterMode.ALL) }
+    var comics by remember { mutableStateOf<List<Comic>?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var viewMode by remember { mutableStateOf(ViewMode.LIST_THUMB) }
 
     LaunchedEffect(Unit) {
-        folderManager.folders.collectLatest { list ->
-            folders = list
+        val saved = prefs.getViewMode()
+        if (saved != null) viewMode = saved
+    }
+
+    LaunchedEffect(folderPath) {
+        isLoading = true
+        comics = withContext(Dispatchers.IO) {
+            ComicScanner(context).scanFolder(folderPath)
         }
+        isLoading = false
     }
-
-    // Diálogo de confirmación para borrar
-    if (folderToDelete != null) {
-        AlertDialog(
-            onDismissRequest = { folderToDelete = null },
-            title = { Text("Eliminar carpeta", color = Color.White, fontSize = 16.sp) },
-            text = {
-                Text(
-                    "¿Quieres eliminar \"${folderToDelete!!.name}\"?",
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 14.sp
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        folderManager.removeFolder(folderToDelete!!.path)
-                        folderToDelete = null
-                    }
-                }) {
-                    Text("Eliminar", color = Color(0xFFFF5555), fontSize = 13.sp)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { folderToDelete = null }) {
-                    Text("Cancelar", color = Color.White, fontSize = 13.sp)
-                }
-            },
-            containerColor = Color(0xFF1A1A1A)
-        )
-    }
-
-    when {
-        folders == null -> Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("Cargando...", color = Color.White, fontSize = 13.sp)
-        }
-
-        showPicker -> FolderPickerScreen(
-            onFolderSelected = { path, name ->
-                scope.launch {
-                    folderManager.addFolder(path, name)
-                    showPicker = false
-                }
-            },
-            onCancel = { showPicker = false }
-        )
-
-        selectedFolder != null -> LibraryScreen(
-            folderPath = selectedFolder!!.path,
-            folderName = selectedFolder!!.name,
-            onBack = { selectedFolder = null }
-        )
-
-        folders!!.isEmpty() -> NoFoldersScreen(
-            onAddFolder = { showPicker = true }
-        )
-
-        else -> FoldersHomeScreen(
-            folders = folders!!,
-            filterMode = filterMode,
-            onFilterChange = { filterMode = it },
-            onFolderClick = { selectedFolder = it },
-            onAddFolder = { showPicker = true },
-            onToggleFavorite = { path ->
-                scope.launch { folderManager.toggleFavorite(path) }
-            },
-            onDeleteRequest = { folder -> folderToDelete = folder }
-        )
-    }
-}
-
-enum class FilterMode {
-    ALL,
-    FAVORITES_ONLY
-}
-
-@Composable
-fun NoFoldersScreen(onAddFolder: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("No tienes carpetas configuradas", color = Color.White, fontSize = 16.sp)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "Elige una carpeta donde tengas tus cómics.",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(
-            onClick = onAddFolder,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B4EAA))
-        ) {
-            Text("➕ Añadir carpeta", fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
-fun FoldersHomeScreen(
-    folders: List<FolderConfig>,
-    filterMode: FilterMode,
-    onFilterChange: (FilterMode) -> Unit,
-    onFolderClick: (FolderConfig) -> Unit,
-    onAddFolder: () -> Unit,
-    onToggleFavorite: (String) -> Unit,
-    onDeleteRequest: (FolderConfig) -> Unit
-) {
-    // Filtrar según el modo
-    val displayFolders = when (filterMode) {
-        FilterMode.ALL -> folders
-        FilterMode.FAVORITES_ONLY -> folders.filter { it.isFavorite }
-    }
-
-    val favorites = folders.filter { it.isFavorite }
-    val hasFavorites = favorites.isNotEmpty()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(Color(0xFF0E0E0E))
             .padding(12.dp)
-            .verticalScroll(rememberScrollState())
     ) {
-        // Título
-        Text(
-            "📚 Carpetas configuradas",
-            color = Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(modifier = Modifier.height(2.dp))
-
-        Text(
-            "Toca para entrar · ⭐ favorita · 🗑 eliminar",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 10.sp
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Chips de filtro (solo si hay favoritas)
-        if (hasFavorites) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                FilterChip(
-                    text = "Todas (${folders.size})",
-                    active = filterMode == FilterMode.ALL,
-                    onClick = { onFilterChange(FilterMode.ALL) }
-                )
-                FilterChip(
-                    text = "⭐ Favoritas (${favorites.size})",
-                    active = filterMode == FilterMode.FAVORITES_ONLY,
-                    onClick = { onFilterChange(FilterMode.FAVORITES_ONLY) }
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-
-        // Lista de carpetas
-        if (displayFolders.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "No hay carpetas que mostrar",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 12.sp
-                )
-            }
-        } else {
-            displayFolders.forEach { folder ->
-                FolderRowCompact(
-                    folder = folder,
-                    onClick = { onFolderClick(folder) },
-                    onToggleFavorite = { onToggleFavorite(folder.path) },
-                    onDelete = { onDeleteRequest(folder) }
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Button(
-            onClick = onAddFolder,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B4EAA))
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("➕ Añadir otra carpeta", fontSize = 13.sp)
+            Button(
+                onClick = onBack,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B4EAA)),
+                modifier = Modifier.width(60.dp)
+            ) {
+                Text("←", fontSize = 18.sp, color = Color.White)
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = folderName,
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = folderPath,
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF1A1A1A), RoundedCornerShape(6.dp))
+                .padding(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (comics != null && comics!!.isNotEmpty()) {
+                Text(
+                    text = "✅ ${comics!!.size}",
+                    color = Color(0xFFFF6B00),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            ViewButton(
+                text = "☰",
+                active = viewMode == ViewMode.LIST_THUMB,
+                onClick = {
+                    viewMode = ViewMode.LIST_THUMB
+                    scope.launch { prefs.saveViewMode(ViewMode.LIST_THUMB) }
+                }
+            )
+            ViewButton(
+                text = "≡",
+                active = viewMode == ViewMode.LIST_COMPACT,
+                onClick = {
+                    viewMode = ViewMode.LIST_COMPACT
+                    scope.launch { prefs.saveViewMode(ViewMode.LIST_COMPACT) }
+                }
+            )
+            ViewButton(
+                text = "⊞",
+                active = viewMode == ViewMode.GRID_2,
+                onClick = {
+                    viewMode = ViewMode.GRID_2
+                    scope.launch { prefs.saveViewMode(ViewMode.GRID_2) }
+                }
+            )
+            ViewButton(
+                text = "⊞⊞",
+                active = viewMode == ViewMode.GRID_4,
+                onClick = {
+                    viewMode = ViewMode.GRID_4
+                    scope.launch { prefs.saveViewMode(ViewMode.GRID_4) }
+                }
+            )
+            ViewButton(
+                text = "⊞⊞⊞",
+                active = viewMode == ViewMode.GRID_6,
+                onClick = {
+                    viewMode = ViewMode.GRID_6
+                    scope.launch { prefs.saveViewMode(ViewMode.GRID_6) }
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        when {
+            isLoading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = Color(0xFFFF6B00))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Escaneando carpeta...", color = Color.White, fontSize = 14.sp)
+                    }
+                }
+            }
+            comics == null || comics!!.isEmpty() -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No se encontraron cómics",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 14.sp
+                    )
+                }
+            }
+            else -> {
+                when (viewMode) {
+                    ViewMode.LIST_THUMB -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(comics!!, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                                ComicRowWithThumbnail(comic)
+                            }
+                        }
+                    }
+
+                    ViewMode.LIST_COMPACT -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        items(comics!!, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                                ComicRowCompact(comic)
+                            }
+                        }
+                    }
+
+                    ViewMode.GRID_2 -> LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(comics!!, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                                ComicGridItem(comic)
+                            }
+                        }
+                    }
+
+                    ViewMode.GRID_4 -> LazyVerticalGrid(
+                        columns = GridCells.Fixed(4),
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(comics!!, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                                ComicGridItem(comic)
+                            }
+                        }
+                    }
+
+                    ViewMode.GRID_6 -> LazyVerticalGrid(
+                        columns = GridCells.Fixed(6),
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(comics!!, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                                ComicGridSmall(comic)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun FilterChip(text: String, active: Boolean, onClick: () -> Unit) {
-    Box(
+private fun ViewButton(text: String, active: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (active) Color(0xFFFF6B00) else Color(0xFF333333)
+        ),
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (active) Color(0xFFFF6B00) else Color(0xFF2A2A2A))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .width(44.dp)
+            .padding(horizontal = 1.dp),
+        contentPadding = PaddingValues(0.dp)
     ) {
-        Text(
-            text = text,
-            color = Color.White,
-            fontSize = 11.sp,
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
-        )
+        Text(text, fontSize = 12.sp, color = Color.White)
     }
 }
 
 @Composable
-private fun FolderRowCompact(
-    folder: FolderConfig,
-    onClick: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onDelete: () -> Unit
-) {
+private fun ComicRowWithThumbnail(comic: Comic) {
+    val context = LocalContext.current
+    var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(comic.id) {
+        thumbPath = if (comic.type == ComicType.FOLDER && comic.coverPath != null) {
+            comic.coverPath
+        } else {
+            ThumbnailExtractor(context).getThumbnail(comic)?.absolutePath
+        }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF1A1A1A))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .background(Color(0xFF1A1A1A), RoundedCornerShape(6.dp))
+            .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Box(
+            modifier = Modifier
+                .size(60.dp, 80.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0xFF2A2A2A)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (thumbPath != null) {
+                AsyncImage(
+                    model = thumbPath,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(text = iconFor(comic.type), fontSize = 28.sp)
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "📁 ${folder.name}",
+                text = comic.title,
                 color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
+                fontSize = 14.sp,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = folder.path,
-                color = Color.White.copy(alpha = 0.4f),
-                fontSize = 9.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                text = "${comic.type} · ${formatSize(comic.sizeBytes)}",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 11.sp
             )
-        }
-
-        // Botón ⭐ (favorito)
-        Text(
-            text = if (folder.isFavorite) "⭐" else "☆",
-            fontSize = 18.sp,
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .clickable(onClick = onToggleFavorite)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        )
-
-        // Botón 🗑 (eliminar)
-        Text(
-            text = "🗑",
-            fontSize = 14.sp,
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .clickable(onClick = onDelete)
-                .padding(horizontal = 6.dp, vertical = 4.dp)
-        )
-    }
-}
-
-fun checkStoragePermission(): Boolean {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        Environment.isExternalStorageManager()
-    } else true
-}
-
-fun openAllFilesSettings(packageName: String, context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        try {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-            context.startActivity(intent)
         }
     }
 }
 
 @Composable
-fun PermissionScreen(onOpenSettings: () -> Unit, onCheckAgain: () -> Unit) {
+private fun ComicRowCompact(comic: Comic) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = iconFor(comic.type), fontSize = 18.sp)
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = comic.title,
+            color = Color.White,
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun ComicGridItem(comic: Comic) {
+    val context = LocalContext.current
+    var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(comic.id) {
+        thumbPath = if (comic.type == ComicType.FOLDER && comic.coverPath != null) {
+            comic.coverPath
+        } else {
+            ThumbnailExtractor(context).getThumbnail(comic)?.absolutePath
+        }
+    }
+
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+            .fillMaxWidth()
+            .background(Color(0xFF1A1A1A), RoundedCornerShape(6.dp))
+            .padding(6.dp)
     ) {
-        Text("Acceso a archivos", color = Color.White, fontSize = 20.sp)
-        Spacer(modifier = Modifier.height(16.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.75f)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0xFF2A2A2A)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (thumbPath != null) {
+                AsyncImage(
+                    model = thumbPath,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(text = iconFor(comic.type), fontSize = 40.sp)
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
-            "Para escanear tus cómics, la app necesita acceso a todos los archivos.",
-            color = Color.White.copy(alpha = 0.8f),
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center
+            text = comic.title,
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 13.sp
         )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(
-            onClick = onOpenSettings,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B4EAA))
-        ) {
-            Text("Abrir ajustes", fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun ComicGridSmall(comic: Comic) {
+    val context = LocalContext.current
+    var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(comic.id) {
+        thumbPath = if (comic.type == ComicType.FOLDER && comic.coverPath != null) {
+            comic.coverPath
+        } else {
+            ThumbnailExtractor(context).getThumbnail(comic)?.absolutePath
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = onCheckAgain,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333))
-        ) {
-            Text("Ya di el permiso", fontSize = 13.sp)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(0.75f)
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF2A2A2A)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (thumbPath != null) {
+            AsyncImage(
+                model = thumbPath,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Text(text = iconFor(comic.type), fontSize = 24.sp)
         }
+    }
+}
+
+private fun iconFor(type: ComicType): String = when (type) {
+    ComicType.CBZ -> "📕"
+    ComicType.CBR -> "📕"
+    ComicType.ZIP -> "📦"
+    ComicType.RAR -> "📦"
+    ComicType.SEVEN_ZIP -> "📦"
+    ComicType.PDF -> "📄"
+    ComicType.FOLDER -> "📁"
+    else -> "❓"
+}
+
+private fun formatSize(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024L * 1024L * 1024L -> "${bytes / (1024 * 1024)} MB"
+        else -> "${bytes / (1024L * 1024L * 1024L)} GB"
     }
 }
