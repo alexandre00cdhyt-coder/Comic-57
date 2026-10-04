@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -64,13 +65,11 @@ fun LibraryScreen(
     var isLoading by remember { mutableStateOf(true) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST_THUMB) }
 
-    // Cargar la vista guardada al abrir
     LaunchedEffect(Unit) {
         val saved = prefs.getViewMode()
         if (saved != null) viewMode = saved
     }
 
-    // Escanear carpeta
     LaunchedEffect(folderPath) {
         isLoading = true
         comics = withContext(Dispatchers.IO) {
@@ -85,7 +84,7 @@ fun LibraryScreen(
             .background(Color(0xFF0E0E0E))
             .padding(12.dp)
     ) {
-        // ─────────── CABECERA ───────────
+        // Cabecera
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -119,7 +118,7 @@ fun LibraryScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // ─────────── BARRA DE VISTA (5 botones) ───────────
+        // Barra de vista
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -127,7 +126,6 @@ fun LibraryScreen(
                 .padding(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Contador
             if (comics != null && comics!!.isNotEmpty()) {
                 Text(
                     text = "✅ ${comics!!.size}",
@@ -140,7 +138,6 @@ fun LibraryScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // 5 botones: [☰] [≡] [⊞2] [⊞4] [⊞6]
             ViewButton(
                 text = "☰",
                 active = viewMode == ViewMode.LIST_THUMB,
@@ -185,7 +182,7 @@ fun LibraryScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ─────────── CONTENIDO ───────────
+        // Contenido
         when {
             isLoading -> {
                 Box(
@@ -269,7 +266,7 @@ private fun ViewButton(text: String, active: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .width(44.dp)
             .padding(horizontal = 1.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+        contentPadding = PaddingValues(0.dp)
     ) {
         Text(text, fontSize = 12.sp, color = Color.White)
     }
