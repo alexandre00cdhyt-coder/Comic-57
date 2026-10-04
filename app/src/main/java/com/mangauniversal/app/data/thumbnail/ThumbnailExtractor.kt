@@ -32,21 +32,28 @@ class ThumbnailExtractor(private val context: Context) {
                 return@withContext outFile
             }
 
-            val bitmap: Bitmap? = when (comic.type) {
+            // Extraer bitmap según tipo
+            val extracted: Bitmap? = when (comic.type) {
                 ComicType.FOLDER -> extractFromFolder(comic)
                 ComicType.CBZ, ComicType.ZIP -> extractFromZip(comic)
                 ComicType.PDF -> extractFromPdf(comic)
                 else -> null
-            } ?: return@withContext null
+            }
 
-            val scaled = scaleBitmap(bitmap, 400)
+            // Si no se pudo extraer, salir
+            if (extracted == null) return@withContext null
 
+            // Escalar (aquí ya no es null)
+            val scaled: Bitmap = scaleBitmap(extracted, 400)
+
+            // Guardar como JPEG
             FileOutputStream(outFile).use { out ->
                 scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
             }
 
-            if (scaled != bitmap) scaled.recycle()
-            bitmap.recycle()
+            // Liberar bitmaps
+            if (scaled !== extracted) scaled.recycle()
+            extracted.recycle()
 
             if (outFile.exists() && outFile.length() > 0) outFile else null
         } catch (e: Exception) {
