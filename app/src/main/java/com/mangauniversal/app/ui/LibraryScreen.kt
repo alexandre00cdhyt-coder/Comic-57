@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -24,21 +26,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
 import com.mangauniversal.app.data.scanner.ComicScanner
+import com.mangauniversal.app.data.thumbnail.ThumbnailExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * Pantalla que muestra los cómics de una carpeta concreta.
- */
 @Composable
 fun LibraryScreen(
     folderPath: String,
@@ -50,7 +53,6 @@ fun LibraryScreen(
     var comics by remember { mutableStateOf<List<Comic>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
-    // Escanear la carpeta al entrar
     LaunchedEffect(folderPath) {
         isLoading = true
         comics = withContext(Dispatchers.IO) {
@@ -65,7 +67,6 @@ fun LibraryScreen(
             .background(Color(0xFF0E0E0E))
             .padding(12.dp)
     ) {
-        // Barra superior
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -104,11 +105,7 @@ fun LibraryScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = Color(0xFFFF6B00))
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Escaneando carpeta...",
-                            color = Color.White,
-                            fontSize = 14.sp
-                        )
+                        Text("Escaneando carpeta...", color = Color.White, fontSize = 14.sp)
                     }
                 }
             }
@@ -125,7 +122,6 @@ fun LibraryScreen(
                 }
             }
             else -> {
-                // Contador
                 Text(
                     text = "✅ ${comics!!.size} cómics encontrados",
                     color = Color(0xFFFF6B00),
@@ -135,13 +131,12 @@ fun LibraryScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Lista de cómics con LazyColumn
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(comics!!, key = { it.id }) { comic ->
-                        ComicRow(comic = comic)
+                        ComicRowWithThumbnail(comic = comic)
                     }
                 }
             }
@@ -150,27 +145,51 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun ComicRow(comic: Comic) {
-    val icon = when (comic.type) {
-        ComicType.CBZ -> "📕"
-        ComicType.CBR -> "📕"
-        ComicType.ZIP -> "📦"
-        ComicType.RAR -> "📦"
-        ComicType.SEVEN_ZIP -> "📦"
-        ComicType.PDF -> "📄"
-        ComicType.FOLDER -> "📁"
-        else -> "❓"
+private fun ComicRowWithThumbnail(comic: Comic) {
+    val context = LocalContext.current
+    var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(comic.id) {
+        if (comic.type == ComicType.FOLDER && comic.coverPath != null) {
+            thumbPath = comic.coverPath
+        } else {
+            val extractor = ThumbnailExtractor(context)
+            val result = extractor.getThumbnail(comic)
+            thumbPath = result?.absolutePath
+        }
     }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF1A1A1A))
-            .padding(12.dp),
+            .background(Color(0xFF1A1A1A), RoundedCornerShape(6.dp))
+            .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = icon, fontSize = 26.sp)
+        Box(
+            modifier = Modifier
+                .size(60.dp, 80.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0xFF2A2A2A)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (thumbPath != null) {
+                AsyncImage(
+                    model = thumbPath,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(
+                    text = iconFor(comic.type),
+                    fontSize = 28.sp
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.width(12.dp))
+
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = comic.title,
@@ -179,6 +198,7 @@ private fun ComicRow(comic: Comic) {
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "${comic.type} · ${formatSize(comic.sizeBytes)}",
                 color = Color.White.copy(alpha = 0.5f),
@@ -186,6 +206,17 @@ private fun ComicRow(comic: Comic) {
             )
         }
     }
+}
+
+private fun iconFor(type: ComicType): String = when (type) {
+    ComicType.CBZ -> "📕"
+    ComicType.CBR -> "📕"
+    ComicType.ZIP -> "📦"
+    ComicType.RAR -> "📦"
+    ComicType.SEVEN_ZIP -> "📦"
+    ComicType.PDF -> "📄"
+    ComicType.FOLDER -> "📁"
+    else -> "❓"
 }
 
 private fun formatSize(bytes: Long): String {
