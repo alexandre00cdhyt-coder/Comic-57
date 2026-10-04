@@ -1,7 +1,6 @@
 package com.mangauniversal.app.data.scanner
 
 import android.content.Context
-import android.os.Environment
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
 import com.mangauniversal.app.data.model.detectComicType
@@ -20,37 +19,62 @@ class ComicScanner(private val context: Context) {
         ".nomedia", "LOST.DIR", "System Volume Information"
     )
 
-    /**
-     * Escanea una carpeta concreta (y subcarpetas) buscando cómics.
-     */
+    private val ignoredExtensions = setOf(
+        "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "3gp", "m4v",
+        "mp3", "wav", "ogg", "flac", "aac", "m4a",
+        "txt", "log", "ini", "cfg", "json", "xml", "html", "htm",
+        "apk", "exe", "dll", "so", "db", "sqlite", "bak"
+    )
+
     suspend fun scanFolder(folderPath: String): List<Comic> = withContext(Dispatchers.IO) {
         val results = mutableListOf<Comic>()
-        val root = File(folderPath)
-        if (!root.exists() || !root.canRead()) return@withContext emptyList()
-        walk(root, results)
-        // Ordenar con orden natural (v1, v2, v10 en vez de v1, v10, v2)
+        try {
+            val root = File(folderPath)
+            if (!root.exists() || !root.canRead()) return@withContext emptyList()
+            walk(root, results, depth = 0)
+        } catch (e: Exception) {
+            // Devolvemos lo que tengamos
+        }
         results.sortedWith(compareBy(NaturalOrderComparator()) { it.title })
     }
 
-    private suspend fun walk(dir: File, results: MutableList<Comic>) {
+    private suspend fun walk(dir: File, results: MutableList<Comic>, depth: Int) {
         coroutineContext.ensureActive()
+        if (depth > 6) return
         if (dir.name in ignoredFolders) return
 
-        val children = dir.listFiles() ?: return
+        val children = try {
+            dir.listFiles() ?: return
+        } catch (e: Exception) {
+            return
+        }
 
-        // Si la carpeta tiene imágenes sueltas → tratarla como cómic
-        val imageFiles = children.filter { it.isFile && it.name.isImageFile() }
-        if (imageFiles.size >= 2) {
+        // Filtrar solo imágenes sueltas
+        val imageFiles = children.filter { child ->
+            child.isFile && child.name.isImageFile()
+        }
+
+        // Si hay 3+ imágenes → tratarla como cómic y NO seguir bajando
+        if (imageFiles.size >= 3) {
             results.add(folderToComic(dir, imageFiles))
             return
         }
 
+        // Recorrer subcarpetas y archivos cómic
         for (child in children) {
             coroutineContext.ensureActive()
-            if (child.isDirectory && child.canRead()) {
-                walk(child, results)
-            } else if (child.isFile && child.name.isComicFile()) {
-                results.add(fileToComic(child))
+
+            val ext = child.extension.lowercase()
+            if (ext in ignoredExtensions) continue
+
+            try {
+                if (child.isDirectory && child.canRead()) {
+                    walk(child, results, depth + 1)
+                } else if (child.isFile && child.name.isComicFile()) {
+                    results.add(fileToComic(child))
+                }
+            } catch (e: Exception) {
+                continue
             }
         }
     }
@@ -69,7 +93,16 @@ class ComicScanner(private val context: Context) {
     }
 
     private fun folderToComic(folder: File, images: List<File>): Comic {
-        val sorted = images.sortedWith(compareBy(NaturalOrderComparator()) { it.name })
+        val sorted = try {
+            images.sortedWith(compareBy(NaturalOrderComparator()) { it.name })
+        } catch (e: Exception) {
+            images
+        }
+        val totalSize = try {
+            sorted.fold(0L) { acc, img -> acc + img.length() }
+        } catch (e: Exception) {
+            0L
+        }
         return Comic(
             id = folder.absolutePath,
             title = folder.name,
@@ -79,15 +112,11 @@ class ComicScanner(private val context: Context) {
             pageCount = sorted.size,
             folder = folder.parentFile?.name ?: "",
             lastModified = folder.lastModified(),
-            sizeBytes = images.sumOf { it.length() }
+            sizeBytes = totalSize
         )
     }
 }
 
-/**
- * Comparador que ordena strings con números de forma natural.
- * Ejemplo: "v1", "v2", "v10" (en vez de "v1", "v10", "v2")
- */
 class NaturalOrderComparator : Comparator<String> {
     override fun compare(a: String, b: String): Int {
         var i = 0
@@ -95,26 +124,21 @@ class NaturalOrderComparator : Comparator<String> {
         while (i < a.length && j < b.length) {
             val ca = a[i]
             val cb = b[j]
-
             if (ca.isDigit() && cb.isDigit()) {
-                // Leer el número completo de cada lado
-                var numA = 0
+                var numA = 0L
                 while (i < a.length && a[i].isDigit()) {
-                    numA = numA * 10 + (a[i] - '0')
-                    i++
+                    numA = numA * 10 + (a[i] - '0'); i++
                 }
-                var numB = 0
+                var numB = 0L
                 while (j < b.length && b[j].isDigit()) {
-                    numB = numB * 10 + (b[j] - '0')
-                    j++
+                    numB = numB * 10 + (b[j] - '0'); j++
                 }
-                if (numA != numB) return numA - numB
+                if (numA != numB) return if (numA < numB) -1 else 1
             } else {
                 val la = ca.lowercaseChar()
                 val lb = cb.lowercaseChar()
                 if (la != lb) return la - lb
-                i++
-                j++
+                i++; j++
             }
         }
         return (a.length - i) - (b.length - j)
