@@ -1,6 +1,7 @@
 package com.mangauniversal.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,7 +56,8 @@ import kotlinx.coroutines.withContext
 fun LibraryScreen(
     folderPath: String,
     folderName: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onComicClick: (Comic) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -84,7 +86,6 @@ fun LibraryScreen(
             .background(Color(0xFF0E0E0E))
             .padding(12.dp)
     ) {
-        // Cabecera
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -118,7 +119,6 @@ fun LibraryScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Barra de vista
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -182,7 +182,6 @@ fun LibraryScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Contenido
         when {
             isLoading -> {
                 Box(
@@ -214,14 +213,22 @@ fun LibraryScreen(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(comics!!, key = { it.id }) { ComicRowWithThumbnail(it) }
+                        items(comics!!, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                                ComicRowWithThumbnail(comic)
+                            }
+                        }
                     }
 
                     ViewMode.LIST_COMPACT -> LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        items(comics!!, key = { it.id }) { ComicRowCompact(it) }
+                        items(comics!!, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                                ComicRowCompact(comic)
+                            }
+                        }
                     }
 
                     ViewMode.GRID_2 -> LazyVerticalGrid(
@@ -230,7 +237,11 @@ fun LibraryScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(comics!!, key = { it.id }) { ComicGridItem(it) }
+                        items(comics!!, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                                ComicGridItem(comic)
+                            }
+                        }
                     }
 
                     ViewMode.GRID_4 -> LazyVerticalGrid(
@@ -239,7 +250,11 @@ fun LibraryScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(comics!!, key = { it.id }) { ComicGridItem(it) }
+                        items(comics!!, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                                ComicGridItem(comic)
+                            }
+                        }
                     }
 
                     ViewMode.GRID_6 -> LazyVerticalGrid(
@@ -248,7 +263,11 @@ fun LibraryScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        items(comics!!, key = { it.id }) { ComicGridSmall(it) }
+                        items(comics!!, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                                ComicGridSmall(comic)
+                            }
+                        }
                     }
                 }
             }
