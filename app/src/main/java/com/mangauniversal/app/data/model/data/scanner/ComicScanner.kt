@@ -11,104 +11,43 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.security.MessageDigest
 import kotlin.coroutines.coroutineContext
 
-/**
- * Escáner de cómics en el almacenamiento del dispositivo.
- *
- * Recorre recursivamente:
- *  - Memoria interna: /storage/emulated/0/
- *  - Memoria externa / microSD: /storage/XXXX-XXXX/
- *
- * Detecta:
- *  - Archivos CBZ, CBR, ZIP, RAR, 7Z, PDF
- *  - Carpetas que contengan imágenes (se tratan como un cómic)
- */
 class ComicScanner(private val context: Context) {
 
-    // Carpetas que NO queremos escanear (basura del sistema)
     private val ignoredFolders = setOf(
-        "Android",
-        ".thumbnails",
-        ".cache",
-        "cache",
-        "temp",
-        "tmp",
-        ".nomedia",
-        "LOST.DIR",
-        "System Volume Information"
+        "Android", ".thumbnails", ".cache", "cache", "temp", "tmp",
+        ".nomedia", "LOST.DIR", "System Volume Information"
     )
 
     /**
-     * Escanea todo el almacenamiento y devuelve la lista de cómics encontrados.
+     * Escanea una carpeta concreta (y subcarpetas) buscando cómics.
      */
-    suspend fun scanAll(): List<Comic> = withContext(Dispatchers.IO) {
+    suspend fun scanFolder(folderPath: String): List<Comic> = withContext(Dispatchers.IO) {
         val results = mutableListOf<Comic>()
-        val roots = getStorageRoots()
-
-        for (root in roots) {
-            if (!root.exists() || !root.canRead()) continue
-            walk(root, results)
-        }
-
-        results.sortedBy { it.title.lowercase() }
+        val root = File(folderPath)
+        if (!root.exists() || !root.canRead()) return@withContext emptyList()
+        walk(root, results)
+        // Ordenar con orden natural (v1, v2, v10 en vez de v1, v10, v2)
+        results.sortedWith(compareBy(NaturalOrderComparator()) { it.title })
     }
 
-    /**
-     * Devuelve las raíces de almacenamiento disponibles.
-     * Interna + microSD (si está montada).
-     */
-    private fun getStorageRoots(): List<File> {
-        val roots = mutableListOf<File>()
-
-        // Almacenamiento interno principal
-        val primary = Environment.getExternalStorageDirectory()
-        if (primary != null && primary.exists()) {
-            roots.add(primary)
-        }
-
-        // Almacenamiento externo / microSD
-        val storageDir = File("/storage")
-        if (storageDir.exists() && storageDir.isDirectory) {
-            storageDir.listFiles()?.forEach { file ->
-                if (file.isDirectory &&
-                    file.canRead() &&
-                    file.name != "emulated" &&
-                    file.name != "self"
-                ) {
-                    roots.add(file)
-                }
-            }
-        }
-
-        return roots
-    }
-
-    /**
-     * Recorre recursivamente una carpeta buscando cómics.
-     */
     private suspend fun walk(dir: File, results: MutableList<Comic>) {
         coroutineContext.ensureActive()
-
-        // Ignorar carpetas basura
         if (dir.name in ignoredFolders) return
 
         val children = dir.listFiles() ?: return
 
-        // Comprobar si la carpeta actual es un "cómic" (contiene imágenes)
+        // Si la carpeta tiene imágenes sueltas → tratarla como cómic
         val imageFiles = children.filter { it.isFile && it.name.isImageFile() }
         if (imageFiles.size >= 2) {
-            // Es una carpeta de imágenes → la tratamos como cómic
             results.add(folderToComic(dir, imageFiles))
-            return // No seguimos bajando dentro
+            return
         }
 
-        // Recorrer los hijos
         for (child in children) {
             coroutineContext.ensureActive()
-
-            if (child.isDirectory) {
+            if (child.isDirectory && child.canRead()) {
                 walk(child, results)
             } else if (child.isFile && child.name.isComicFile()) {
                 results.add(fileToComic(child))
@@ -116,56 +55,68 @@ class ComicScanner(private val context: Context) {
         }
     }
 
-    /**
-     * Convierte un archivo (CBZ, PDF, etc.) en un Comic.
-     */
     private fun fileToComic(file: File): Comic {
         val type = detectComicType(file.name)
-        val title = file.nameWithoutExtension
-        val folder = file.parentFile?.name ?: ""
-
         return Comic(
-            id = hashId(file.absolutePath),
-            title = title,
+            id = file.absolutePath,
+            title = file.nameWithoutExtension,
             path = file.absolutePath,
             type = type,
-            coverPath = null,
-            pageCount = 0, // Se calculará al abrir el cómic
+            folder = file.parentFile?.name ?: "",
             lastModified = file.lastModified(),
-            sizeBytes = file.length(),
-            folder = folder,
-            isFavorite = false,
-            lastPageRead = 0,
-            lastReadAt = 0L,
+            sizeBytes = file.length()
         )
     }
 
-    /**
-     * Convierte una carpeta con imágenes en un Comic.
-     */
     private fun folderToComic(folder: File, images: List<File>): Comic {
-        val sorted = images.sortedBy { it.name.lowercase() }
+        val sorted = images.sortedWith(compareBy(NaturalOrderComparator()) { it.name })
         return Comic(
-            id = hashId(folder.absolutePath),
+            id = folder.absolutePath,
             title = folder.name,
             path = folder.absolutePath,
             type = ComicType.FOLDER,
             coverPath = sorted.firstOrNull()?.absolutePath,
             pageCount = sorted.size,
-            lastModified = folder.lastModified(),
-            sizeBytes = images.sumOf { it.length() },
             folder = folder.parentFile?.name ?: "",
-            isFavorite = false,
-            lastPageRead = 0,
-            lastReadAt = 0L,
+            lastModified = folder.lastModified(),
+            sizeBytes = images.sumOf { it.length() }
         )
     }
+}
 
-    /**
-     * Genera un ID único a partir de la ruta.
-     */
-    private fun hashId(input: String): String {
-        val bytes = MessageDigest.getInstance("SHA-1").digest(input.toByteArray())
-        return bytes.joinToString("") { "%02x".format(it) }.take(16)
+/**
+ * Comparador que ordena strings con números de forma natural.
+ * Ejemplo: "v1", "v2", "v10" (en vez de "v1", "v10", "v2")
+ */
+class NaturalOrderComparator : Comparator<String> {
+    override fun compare(a: String, b: String): Int {
+        var i = 0
+        var j = 0
+        while (i < a.length && j < b.length) {
+            val ca = a[i]
+            val cb = b[j]
+
+            if (ca.isDigit() && cb.isDigit()) {
+                // Leer el número completo de cada lado
+                var numA = 0
+                while (i < a.length && a[i].isDigit()) {
+                    numA = numA * 10 + (a[i] - '0')
+                    i++
+                }
+                var numB = 0
+                while (j < b.length && b[j].isDigit()) {
+                    numB = numB * 10 + (b[j] - '0')
+                    j++
+                }
+                if (numA != numB) return numA - numB
+            } else {
+                val la = ca.lowercaseChar()
+                val lb = cb.lowercaseChar()
+                if (la != lb) return la - lb
+                i++
+                j++
+            }
+        }
+        return (a.length - i) - (b.length - j)
     }
 }
