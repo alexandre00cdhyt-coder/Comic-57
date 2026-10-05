@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
@@ -32,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,14 +51,14 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.reader.PageExtractor
+import com.mangauniversal.app.data.settings.ReaderMode
+import com.mangauniversal.app.data.settings.ReaderPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/**
- * Modos de ajuste de imagen.
- */
 enum class ImageFitMode(val label: String, val contentScale: ContentScale) {
     FIT("Ajustar", ContentScale.Fit),
     FILL("Llenar", ContentScale.Crop),
@@ -70,15 +73,18 @@ fun ReaderScreen(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
+    val scope = rememberCoroutineScope()
+    val prefs = remember { ReaderPreferences(context) }
 
     var pages by remember { mutableStateOf<List<File>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var fitMode by remember { mutableStateOf(ImageFitMode.FIT) }
+    var readerMode by remember { mutableStateOf(ReaderMode.RIGHT) }
     var controlsVisible by remember { mutableStateOf(true) }
     var showFitDialog by remember { mutableStateOf(false) }
+    var showModeDialog by remember { mutableStateOf(false) }
 
-    // ─── Auto-ocultar controles tras 3 segundos ───
     LaunchedEffect(controlsVisible) {
         if (controlsVisible) {
             delay(3000)
@@ -86,7 +92,10 @@ fun ReaderScreen(
         }
     }
 
-    // ─── Modo inmersivo: ocultar barras del sistema ───
+    LaunchedEffect(Unit) {
+        readerMode = prefs.getMode()
+    }
+
     DisposableEffect(Unit) {
         val activity = view.context as? Activity
         val window = activity?.window
@@ -100,7 +109,6 @@ fun ReaderScreen(
         }
     }
 
-    // ─── Botón atrás físico ───
     BackHandler(enabled = true) {
         if (controlsVisible) {
             controlsVisible = false
@@ -109,7 +117,6 @@ fun ReaderScreen(
         }
     }
 
-    // ─── Cargar páginas ───
     LaunchedEffect(comic.id) {
         isLoading = true
         errorMessage = null
@@ -133,8 +140,6 @@ fun ReaderScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-
-        // ─── CONTENIDO ───
         when {
             isLoading -> Box(
                 modifier = Modifier.fillMaxSize(),
@@ -156,14 +161,29 @@ fun ReaderScreen(
                     Button(onClick = onBack) { Text("Volver", fontSize = 12.sp) }
                 }
             }
-            pages != null -> ReaderPager(
-                pages = pages!!,
-                fitMode = fitMode,
-                onCenterTap = { controlsVisible = !controlsVisible }
-            )
+            pages != null -> {
+                when (readerMode) {
+                    ReaderMode.RIGHT -> ReaderHorizontal(
+                        pages = pages!!,
+                        fitMode = fitMode,
+                        reverse = false,
+                        onCenterTap = { controlsVisible = !controlsVisible }
+                    )
+                    ReaderMode.LEFT -> ReaderHorizontal(
+                        pages = pages!!,
+                        fitMode = fitMode,
+                        reverse = true,
+                        onCenterTap = { controlsVisible = !controlsVisible }
+                    )
+                    ReaderMode.VERTICAL -> ReaderVertical(
+                        pages = pages!!,
+                        fitMode = fitMode,
+                        onCenterTap = { controlsVisible = !controlsVisible }
+                    )
+                }
+            }
         }
 
-        // ─── BARRA SUPERIOR (auto-ocultar) ───
         AnimatedVisibility(
             visible = controlsVisible,
             enter = fadeIn(),
@@ -184,7 +204,7 @@ fun ReaderScreen(
                 ) {
                     Text("←", fontSize = 16.sp, color = Color.White)
                 }
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = comic.title,
@@ -195,11 +215,23 @@ fun ReaderScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = comic.type.name,
+                        text = when (readerMode) {
+                            ReaderMode.RIGHT -> "→ Derecha"
+                            ReaderMode.LEFT -> "← Izquierda"
+                            ReaderMode.VERTICAL -> "↓ Vertical"
+                        },
                         color = Color.White.copy(alpha = 0.5f),
                         fontSize = 10.sp
                     )
                 }
+                Button(
+                    onClick = { showModeDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
+                    modifier = Modifier.width(50.dp)
+                ) {
+                    Text("📖", fontSize = 16.sp, color = Color.White)
+                }
+                Spacer(modifier = Modifier.width(6.dp))
                 Button(
                     onClick = { showFitDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
@@ -210,7 +242,43 @@ fun ReaderScreen(
             }
         }
 
-        // ─── DIÁLOGO DE AJUSTE ───
+        if (showModeDialog) {
+            AlertDialog(
+                onDismissRequest = { showModeDialog = false },
+                title = { Text("Modo de lectura", color = Color.White, fontSize = 15.sp) },
+                text = {
+                    Column {
+                        ReaderMode.values().forEach { mode ->
+                            TextButton(
+                                onClick = {
+                                    readerMode = mode
+                                    scope.launch { prefs.saveMode(mode) }
+                                    showModeDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = when (mode) {
+                                        ReaderMode.RIGHT -> (if (readerMode == mode) "✓ " else "   ") + "→ Derecha (occidental)"
+                                        ReaderMode.LEFT -> (if (readerMode == mode) "✓ " else "   ") + "← Izquierda (manga)"
+                                        ReaderMode.VERTICAL -> (if (readerMode == mode) "✓ " else "   ") + "↓ Vertical (tira larga)"
+                                    },
+                                    color = if (readerMode == mode) Color(0xFFFF6B00) else Color.White,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showModeDialog = false }) {
+                        Text("Cerrar", color = Color.White, fontSize = 13.sp)
+                    }
+                },
+                containerColor = Color(0xFF1A1A1A)
+            )
+        }
+
         if (showFitDialog) {
             AlertDialog(
                 onDismissRequest = { showFitDialog = false },
@@ -246,28 +314,71 @@ fun ReaderScreen(
 }
 
 @Composable
-private fun ReaderPager(
+private fun ReaderHorizontal(
     pages: List<File>,
     fitMode: ImageFitMode,
+    reverse: Boolean,
     onCenterTap: () -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { pages.size })
+    val actualPage = if (reverse) pages.size - 1 - pagerState.currentPage else pagerState.currentPage
 
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
             state = pagerState,
+            reverseLayout = reverse,
             modifier = Modifier.fillMaxSize()
         ) { page ->
+            val idx = if (reverse) pages.size - 1 - page else page
             ZoomablePage(
-                file = pages[page],
-                pageKey = page,
+                file = pages[idx],
+                pageKey = idx,
                 contentScale = fitMode.contentScale,
                 onTap = { zone ->
-                    if (zone == TapZone.Center) {
-                        onCenterTap()
-                    }
+                    if (zone == TapZone.Center) onCenterTap()
                 }
             )
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.7f))
+                .padding(8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "${actualPage + 1} / ${pages.size}",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReaderVertical(
+    pages: List<File>,
+    fitMode: ImageFitMode,
+    onCenterTap: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            items(pages.size) { index ->
+                ZoomablePage(
+                    file = pages[index],
+                    pageKey = index,
+                    contentScale = fitMode.contentScale,
+                    onTap = { zone ->
+                        if (zone == TapZone.Center) onCenterTap()
+                    }
+                )
+            }
         }
     }
 }
