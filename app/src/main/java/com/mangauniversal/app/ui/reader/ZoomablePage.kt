@@ -53,6 +53,7 @@ fun ZoomablePage(
     file: File?,
     pageKey: Any,
     onTap: (TapZone) -> Unit,
+    contentScale: ContentScale = ContentScale.Fit,
     modifier: Modifier = Modifier
 ) {
     val scaleAnim = remember(pageKey) { Animatable(MIN_SCALE) }
@@ -201,7 +202,7 @@ fun ZoomablePage(
                     .crossfade(false)
                     .build(),
                 contentDescription = null,
-                contentScale = ContentScale.Fit,
+                contentScale = contentScale,
                 onSuccess = { state ->
                     imageSize = Size(
                         state.result.drawable.intrinsicWidth.toFloat(),
