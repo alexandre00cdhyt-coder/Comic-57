@@ -10,12 +10,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculateCentroid
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,21 +19,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,8 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -83,7 +77,9 @@ enum class ImageFitMode(val label: String, val contentScale: ContentScale) {
 @Composable
 fun ReaderScreen(
     comic: Comic,
-    onBack: () -> Unit
+    comicsList: List<Comic>,
+    onBack: () -> Unit,
+    onOpenComic: (Comic) -> Unit
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -95,10 +91,17 @@ fun ReaderScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var fitMode by remember { mutableStateOf(ImageFitMode.FIT_WIDTH) }
     var readerMode by remember { mutableStateOf(ReaderMode.RIGHT) }
-    var verticalZoom by remember { mutableFloatStateOf(1f) }
     var controlsVisible by remember { mutableStateOf(true) }
     var showFitDialog by remember { mutableStateOf(false) }
     var showModeDialog by remember { mutableStateOf(false) }
+    var currentPage by remember { mutableIntStateOf(0) }
+    var initialPage by remember { mutableIntStateOf(0) }
+
+    // Índice del cómic actual y siguiente
+    val currentIndex = comicsList.indexOfFirst { it.id == comic.id }
+    val nextComic = if (currentIndex >= 0 && currentIndex < comicsList.size - 1) {
+        comicsList[currentIndex + 1]
+    } else null
 
     LaunchedEffect(controlsVisible) {
         if (controlsVisible) {
@@ -107,9 +110,15 @@ fun ReaderScreen(
         }
     }
 
+    // Cargar modo + progreso inicial
     LaunchedEffect(Unit) {
         readerMode = prefs.getMode()
-        verticalZoom = prefs.getVerticalZoom()
+        initialPage = prefs.getProgress(comic.id)
+    }
+
+    // Guardar en historial al abrir
+    LaunchedEffect(comic.id) {
+        prefs.addToHistory(comic.id, comic.title, comic.path)
     }
 
     DisposableEffect(Unit) {
@@ -122,8 +131,9 @@ fun ReaderScreen(
 
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
-            // Guardar zoom al salir
-            scope.launch { prefs.saveVerticalZoom(verticalZoom) }
+            // Guardar progreso al salir
+            scope.launch { prefs.saveProgress(comic.id, currentPage) }
+            // Guardar zoom vertical si estábamos en vertical
         }
     }
 
@@ -131,6 +141,7 @@ fun ReaderScreen(
         if (controlsVisible) {
             controlsVisible = false
         } else {
+            scope.launch { prefs.saveProgress(comic.id, currentPage) }
             onBack()
         }
     }
@@ -151,6 +162,13 @@ fun ReaderScreen(
             errorMessage = "Error: ${e.message}"
         }
         isLoading = false
+    }
+
+    // Guardar progreso cada vez que cambia la página
+    LaunchedEffect(currentPage) {
+        if (pages != null && pages!!.isNotEmpty()) {
+            prefs.saveProgress(comic.id, currentPage)
+        }
     }
 
     Box(
@@ -174,7 +192,10 @@ fun ReaderScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(errorMessage!!, color = Color(0xFFFF5555), fontSize = 13.sp)
                     Spacer(modifier = Modifier.height(16.dp))
-                    TextButton(onClick = onBack) { Text("Volver", color = Color.White) }
+                    TextButton(onClick = {
+                        scope.launch { prefs.saveProgress(comic.id, currentPage) }
+                        onBack()
+                    }) { Text("Volver", color = Color.White) }
                 }
             }
             pages != null -> {
@@ -183,26 +204,40 @@ fun ReaderScreen(
                         pages = pages!!,
                         fitMode = fitMode,
                         reverse = false,
-                        onCenterTap = { controlsVisible = !controlsVisible }
+                        initialPage = initialPage,
+                        isLastComic = nextComic == null,
+                        nextTitle = nextComic?.title,
+                        onPageChanged = { currentPage = it },
+                        onCenterTap = { controlsVisible = !controlsVisible },
+                        onNextComic = {
+                            scope.launch { prefs.saveProgress(comic.id, currentPage) }
+                            nextComic?.let { onOpenComic(it) }
+                        }
                     )
                     ReaderMode.LEFT -> ReaderHorizontal(
                         pages = pages!!,
                         fitMode = fitMode,
                         reverse = true,
-                        onCenterTap = { controlsVisible = !controlsVisible }
+                        initialPage = initialPage,
+                        isLastComic = nextComic == null,
+                        nextTitle = nextComic?.title,
+                        onPageChanged = { currentPage = it },
+                        onCenterTap = { controlsVisible = !controlsVisible },
+                        onNextComic = {
+                            scope.launch { prefs.saveProgress(comic.id, currentPage) }
+                            nextComic?.let { onOpenComic(it) }
+                        }
                     )
                     ReaderMode.VERTICAL -> ReaderVertical(
                         pages = pages!!,
-                        zoom = verticalZoom,
-                        onZoomChange = { newZoom ->
-                            verticalZoom = newZoom
-                        },
+                        onPageChanged = { currentPage = it },
                         onCenterTap = { controlsVisible = !controlsVisible }
                     )
                 }
             }
         }
 
+        // ─── BARRA SUPERIOR ───
         AnimatedVisibility(
             visible = controlsVisible,
             enter = fadeIn(),
@@ -221,18 +256,42 @@ fun ReaderScreen(
                     fontSize = 22.sp,
                     color = Color.White,
                     modifier = Modifier
-                        .clickable { onBack() }
+                        .clickable {
+                            scope.launch { prefs.saveProgress(comic.id, currentPage) }
+                            onBack()
+                        }
                         .padding(horizontal = 8.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = comic.title,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                // Ir al principio
                 Text(
-                    text = comic.title,
+                    text = "<#",
+                    fontSize = 15.sp,
                     color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .clickable { currentPage = 0 }
+                        .padding(horizontal = 6.dp)
+                )
+                // Ir al final
+                Text(
+                    text = "#>",
+                    fontSize = 15.sp,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clickable {
+                            pages?.let { currentPage = it.size - 1 }
+                        }
+                        .padding(horizontal = 6.dp)
                 )
                 Text(
                     text = "📖",
@@ -240,7 +299,7 @@ fun ReaderScreen(
                     color = Color.White,
                     modifier = Modifier
                         .clickable { showModeDialog = true }
-                        .padding(horizontal = 8.dp)
+                        .padding(horizontal = 6.dp)
                 )
                 Text(
                     text = "⚙",
@@ -248,11 +307,44 @@ fun ReaderScreen(
                     color = Color.White,
                     modifier = Modifier
                         .clickable { showFitDialog = true }
-                        .padding(horizontal = 8.dp)
+                        .padding(horizontal = 6.dp)
                 )
             }
         }
 
+        // ─── BARRA INFERIOR CON SLIDER ───
+        if (pages != null && controlsVisible) {
+            val totalPages = pages!!.size
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Color(0x80000000))
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Slider(
+                    value = currentPage.toFloat(),
+                    onValueChange = { currentPage = it.toInt() },
+                    valueRange = 0f..(totalPages - 1).toFloat().coerceAtLeast(1f),
+                    modifier = Modifier.weight(1f).height(24.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color(0xFFFF6B00),
+                        activeTrackColor = Color(0xFFFF6B00),
+                        inactiveTrackColor = Color(0x55FFFFFF)
+                    )
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "${currentPage + 1} / $totalPages",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // ─── DIÁLOGO MODO ───
         if (showModeDialog) {
             AlertDialog(
                 onDismissRequest = { showModeDialog = false },
@@ -290,6 +382,7 @@ fun ReaderScreen(
             )
         }
 
+        // ─── DIÁLOGO AJUSTE ───
         if (showFitDialog) {
             AlertDialog(
                 onDismissRequest = { showFitDialog = false },
@@ -329,9 +422,23 @@ private fun ReaderHorizontal(
     pages: List<File>,
     fitMode: ImageFitMode,
     reverse: Boolean,
-    onCenterTap: () -> Unit
+    initialPage: Int,
+    isLastComic: Boolean,
+    nextTitle: String?,
+    onPageChanged: (Int) -> Unit,
+    onCenterTap: () -> Unit,
+    onNextComic: () -> Unit
 ) {
-    val pagerState = rememberPagerState(pageCount = { pages.size })
+    val safeInitial = initialPage.coerceIn(0, pages.size - 1)
+    val pagerState = rememberPagerState(
+        initialPage = safeInitial,
+        pageCount = { pages.size }
+    )
+
+    // Notificar cambios de página
+    LaunchedEffect(pagerState.currentPage) {
+        onPageChanged(pagerState.currentPage)
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -349,124 +456,64 @@ private fun ReaderHorizontal(
                 }
             )
         }
+
+        // ─── FLECHITA para ir al siguiente cómic ───
+        val isLastPage = pagerState.currentPage == pages.size - 1
+        if (isLastPage && !isLastComic) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 60.dp, end = 20.dp)
+                    .size(56.dp)
+                    .background(Color(0xCCFF6B00), shape = androidx.compose.foundation.shape.CircleShape)
+                    .clickable { onNextComic() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "→",
+                    fontSize = 28.sp,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
     }
 }
 
-/**
- * Modo Vertical continuo tipo CDisplayEx.
- * - Imágenes apiladas sin huecos.
- * - Pinch con 2 dedos para cambiar el tamaño (50% - 150%).
- * - Cuando el zoom > 100% aparece scroll horizontal.
- * - El zoom se guarda al salir.
- */
 @Composable
 private fun ReaderVertical(
     pages: List<File>,
-    zoom: Float,
-    onZoomChange: (Float) -> Unit,
+    onPageChanged: (Int) -> Unit,
     onCenterTap: () -> Unit
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
-    val screenWidthPx = with(density) {
+    val targetWidthPx = with(density) {
         configuration.screenWidthDp.dp.roundToPx()
     }
-    val screenWidthDp = configuration.screenWidthDp.dp
+    val listState = rememberLazyListState()
 
-    // scroll horizontal compartido (para cuando el zoom > 1)
-    val horizontalScroll = rememberScrollState()
-
-    // Zoom con pinch
-    var internalZoom by remember { mutableFloatStateOf(zoom) }
-
-    // Sincronizar si viene de fuera
-    LaunchedEffect(zoom) {
-        internalZoom = zoom
+    // Notificar cambio de página según scroll
+    LaunchedEffect(listState.firstVisibleItemIndex) {
+        onPageChanged(listState.firstVisibleItemIndex)
     }
 
-    Box(
+    LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    do {
-                        val event = awaitPointerEvent(PointerEventPass.Main)
-                        val pressed = event.changes.filter { it.pressed }
-                        val pointerCount = pressed.size
-
-                        if (pointerCount >= 2) {
-                            val zoomChange = event.calculateZoom()
-                            if (zoomChange != 1f) {
-                                val newZoom = (internalZoom * zoomChange)
-                                    .coerceIn(
-                                        ReaderPreferences.MIN_VERTICAL_ZOOM,
-                                        ReaderPreferences.MAX_VERTICAL_ZOOM
-                                    )
-                                internalZoom = newZoom
-                                onZoomChange(newZoom)
-                                event.changes.forEach { if (it.pressed) it.consume() }
-                            }
-                        }
-                    } while (event.changes.any { it.pressed })
-                }
-            }
+            .background(Color.Black)
+            .clickable(onClick = onCenterTap),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
-        ) {
-            items(pages.size) { index ->
-                // Cada imagen se ajusta al ancho × zoom
-                val imageWidthDp = screenWidthDp * internalZoom
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .wrapContentHeight(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (internalZoom > 1f) {
-                        // Zoom > 100%: scroll horizontal disponible
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(horizontalScroll)
-                        ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(pages[index])
-                                    .size((screenWidthPx * internalZoom).toInt())
-                                    .crossfade(false)
-                                    .build(),
-                                contentDescription = null,
-                                contentScale = ContentScale.FillWidth,
-                                modifier = Modifier
-                                    .width(imageWidthDp)
-                                    .wrapContentHeight()
-                            )
-                        }
-                    } else {
-                        // Zoom <= 100%: imagen centrada en pantalla
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(pages[index])
-                                .size(screenWidthPx)
-                                .crossfade(false)
-                                .build(),
-                            contentDescription = null,
-                            contentScale = ContentScale.FillWidth,
-                            modifier = Modifier
-                                .width(imageWidthDp)
-                                .wrapContentHeight()
-                                .clickable(onClick = onCenterTap)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
+        items(pages.size) { index ->
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(pages[index])
+                    .size(targetWidthPx * 2)
+                    .crossfade(false)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.FillWidth,
+                modifier = M
