@@ -101,8 +101,10 @@ fun FolderFlowScreen() {
     var showPicker by remember { mutableStateOf(false) }
     var selectedFolder by remember { mutableStateOf<FolderConfig?>(null) }
     var selectedComic by remember { mutableStateOf<Comic?>(null) }
+    var comicsInFolder by remember { mutableStateOf<List<Comic>>(emptyList()) }
     var folderToDelete by remember { mutableStateOf<FolderConfig?>(null) }
     var filterMode by remember { mutableStateOf(FilterMode.ALL) }
+    var showHistory by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         folderManager.folders.collectLatest { list ->
@@ -158,16 +160,36 @@ fun FolderFlowScreen() {
             onCancel = { showPicker = false }
         )
 
+        showHistory -> {
+            com.mangauniversal.app.ui.history.HistoryScreen(
+                onBack = { showHistory = false },
+                onOpenComic = { comic, list ->
+                    comicsInFolder = list
+                    selectedComic = comic
+                    showHistory = false
+                }
+            )
+        }
+
         selectedComic != null -> com.mangauniversal.app.ui.reader.ReaderScreen(
             comic = selectedComic!!,
-            onBack = { selectedComic = null }
+            comicsList = comicsInFolder,
+            onBack = {
+                selectedComic = null
+            },
+            onOpenComic = { newComic ->
+                selectedComic = newComic
+            }
         )
 
         selectedFolder != null -> LibraryScreen(
             folderPath = selectedFolder!!.path,
             folderName = selectedFolder!!.name,
             onBack = { selectedFolder = null },
-            onComicClick = { comic -> selectedComic = comic }
+            onComicClick = { comic, allComics ->
+                comicsInFolder = allComics
+                selectedComic = comic
+            }
         )
 
         folders!!.isEmpty() -> NoFoldersScreen(
@@ -183,7 +205,8 @@ fun FolderFlowScreen() {
             onToggleFavorite = { path ->
                 scope.launch { folderManager.toggleFavorite(path) }
             },
-            onDeleteRequest = { folder -> folderToDelete = folder }
+            onDeleteRequest = { folder -> folderToDelete = folder },
+            onOpenHistory = { showHistory = true }
         )
     }
 }
@@ -229,7 +252,8 @@ fun FoldersHomeScreen(
     onFolderClick: (FolderConfig) -> Unit,
     onAddFolder: () -> Unit,
     onToggleFavorite: (String) -> Unit,
-    onDeleteRequest: (FolderConfig) -> Unit
+    onDeleteRequest: (FolderConfig) -> Unit,
+    onOpenHistory: () -> Unit
 ) {
     val displayFolders = when (filterMode) {
         FilterMode.ALL -> folders
@@ -245,17 +269,31 @@ fun FoldersHomeScreen(
             .padding(12.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text(
-            "📚 Carpetas configuradas",
-            color = Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "📚 Carpetas configuradas",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "📖",
+                fontSize = 20.sp,
+                color = Color.White,
+                modifier = Modifier
+                    .clickable(onClick = onOpenHistory)
+                    .padding(horizontal = 8.dp)
+            )
+        }
 
         Spacer(modifier = Modifier.height(2.dp))
 
         Text(
-            "Toca para entrar · ⭐ favorita · 🗑 eliminar",
+            "Toca para entrar · ⭐ favorita · 🗑 eliminar · 📖 historial",
             color = Color.White.copy(alpha = 0.5f),
             fontSize = 10.sp
         )
