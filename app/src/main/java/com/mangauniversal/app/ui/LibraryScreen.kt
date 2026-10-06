@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +47,7 @@ import coil.compose.AsyncImage
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
 import com.mangauniversal.app.data.scanner.ComicScanner
+import com.mangauniversal.app.data.scanner.NaturalOrderComparator
 import com.mangauniversal.app.data.settings.ViewPreferences
 import com.mangauniversal.app.data.thumbnail.ThumbnailExtractor
 import kotlinx.coroutines.Dispatchers
@@ -57,7 +59,7 @@ fun LibraryScreen(
     folderPath: String,
     folderName: String,
     onBack: () -> Unit,
-    onComicClick: (Comic) -> Unit = {}
+    onComicClick: (Comic, List<Comic>) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -66,6 +68,8 @@ fun LibraryScreen(
     var comics by remember { mutableStateOf<List<Comic>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST_THUMB) }
+    var searchQuery by remember { mutableStateOf("") }
+    var sortAscending by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         val saved = prefs.getViewMode()
@@ -80,12 +84,24 @@ fun LibraryScreen(
         isLoading = false
     }
 
+    // Lista filtrada por buscador y ordenada
+    val displayedComics = remember(comics, searchQuery, sortAscending) {
+        val base = comics ?: emptyList()
+        val filtered = if (searchQuery.isBlank()) base
+        else base.filter { it.title.contains(searchQuery, ignoreCase = true) }
+        val sorted = filtered.sortedWith(
+            compareBy(NaturalOrderComparator()) { it.title }
+        )
+        if (sortAscending) sorted else sorted.reversed()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0E0E0E))
             .padding(12.dp)
     ) {
+        // Cabecera
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -119,6 +135,39 @@ fun LibraryScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Buscador + botón de orden
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = {
+                    Text("Buscar cómic...", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                },
+                modifier = Modifier.weight(1f).height(50.dp),
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 13.sp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = { sortAscending = !sortAscending },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
+                modifier = Modifier.width(50.dp),
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Text(
+                    text = if (sortAscending) "A↓" else "Z↑",
+                    fontSize = 12.sp,
+                    color = Color.White
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Barra de vista
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -128,7 +177,7 @@ fun LibraryScreen(
         ) {
             if (comics != null && comics!!.isNotEmpty()) {
                 Text(
-                    text = "✅ ${comics!!.size}",
+                    text = "✅ ${displayedComics.size}",
                     color = Color(0xFFFF6B00),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -207,14 +256,26 @@ fun LibraryScreen(
                     )
                 }
             }
+            displayedComics.isEmpty() -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No hay resultados para \"$searchQuery\"",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 14.sp
+                    )
+                }
+            }
             else -> {
                 when (viewMode) {
                     ViewMode.LIST_THUMB -> LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(comics!!, key = { it.id }) { comic ->
-                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                        items(displayedComics, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic, displayedComics) }) {
                                 ComicRowWithThumbnail(comic)
                             }
                         }
@@ -224,8 +285,8 @@ fun LibraryScreen(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        items(comics!!, key = { it.id }) { comic ->
-                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                        items(displayedComics, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic, displayedComics) }) {
                                 ComicRowCompact(comic)
                             }
                         }
@@ -237,8 +298,8 @@ fun LibraryScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(comics!!, key = { it.id }) { comic ->
-                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                        items(displayedComics, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic, displayedComics) }) {
                                 ComicGridItem(comic)
                             }
                         }
@@ -250,8 +311,8 @@ fun LibraryScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(comics!!, key = { it.id }) { comic ->
-                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                        items(displayedComics, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic, displayedComics) }) {
                                 ComicGridItem(comic)
                             }
                         }
@@ -263,8 +324,8 @@ fun LibraryScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        items(comics!!, key = { it.id }) { comic ->
-                            Box(modifier = Modifier.clickable { onComicClick(comic) }) {
+                        items(displayedComics, key = { it.id }) { comic ->
+                            Box(modifier = Modifier.clickable { onComicClick(comic, displayedComics) }) {
                                 ComicGridSmall(comic)
                             }
                         }
