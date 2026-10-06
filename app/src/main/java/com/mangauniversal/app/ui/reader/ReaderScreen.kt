@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,9 +24,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -79,7 +79,7 @@ fun ReaderScreen(
     var pages by remember { mutableStateOf<List<File>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var fitMode by remember { mutableStateOf(ImageFitMode.FIT) }
+    var fitMode by remember { mutableStateOf(ImageFitMode.FIT_WIDTH) }
     var readerMode by remember { mutableStateOf(ReaderMode.RIGHT) }
     var controlsVisible by remember { mutableStateOf(true) }
     var showFitDialog by remember { mutableStateOf(false) }
@@ -146,8 +146,6 @@ fun ReaderScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Color(0xFFFF6B00))
-                    Spacer(modifier = Modifier.height(12.dp))
                     Text("Cargando páginas...", color = Color.White, fontSize = 13.sp)
                 }
             }
@@ -158,7 +156,7 @@ fun ReaderScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(errorMessage!!, color = Color(0xFFFF5555), fontSize = 13.sp)
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = onBack) { Text("Volver", fontSize = 12.sp) }
+                    TextButton(onClick = onBack) { Text("Volver", color = Color.White) }
                 }
             }
             pages != null -> {
@@ -193,53 +191,53 @@ fun ReaderScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xCC000000))
-                    .padding(8.dp),
+                    .background(Color(0x80000000))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = onBack,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B4EAA)),
-                    modifier = Modifier.width(50.dp)
-                ) {
-                    Text("←", fontSize = 16.sp, color = Color.White)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = comic.title,
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = when (readerMode) {
-                            ReaderMode.RIGHT -> "→ Derecha"
-                            ReaderMode.LEFT -> "← Izquierda"
-                            ReaderMode.VERTICAL -> "↓ Vertical"
-                        },
-                        color = Color.White.copy(alpha = 0.5f),
-                        fontSize = 10.sp
-                    )
-                }
-                Button(
-                    onClick = { showModeDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
-                    modifier = Modifier.width(50.dp)
-                ) {
-                    Text("📖", fontSize = 16.sp, color = Color.White)
-                }
+                Text(
+                    text = "←",
+                    fontSize = 22.sp,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clickable { onBack() }
+                        .padding(horizontal = 8.dp)
+                )
                 Spacer(modifier = Modifier.width(6.dp))
-                Button(
-                    onClick = { showFitDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
-                    modifier = Modifier.width(50.dp)
-                ) {
-                    Text("⚙", fontSize = 16.sp, color = Color.White)
-                }
+                Text(
+                    text = comic.title,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "📖",
+                    fontSize = 18.sp,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clickable { showModeDialog = true }
+                        .padding(horizontal = 8.dp)
+                )
+                Text(
+                    text = "⚙",
+                    fontSize = 18.sp,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clickable { showFitDialog = true }
+                        .padding(horizontal = 8.dp)
+                )
             }
+        }
+
+        if (pages != null && controlsVisible) {
+            ReaderBottomBar(
+                currentPage = 0,
+                totalPages = pages!!.size,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
 
         if (showModeDialog) {
@@ -259,9 +257,9 @@ fun ReaderScreen(
                             ) {
                                 Text(
                                     text = when (mode) {
-                                        ReaderMode.RIGHT -> (if (readerMode == mode) "✓ " else "   ") + "→ Derecha (occidental)"
-                                        ReaderMode.LEFT -> (if (readerMode == mode) "✓ " else "   ") + "← Izquierda (manga)"
-                                        ReaderMode.VERTICAL -> (if (readerMode == mode) "✓ " else "   ") + "↓ Vertical (tira larga)"
+                                        ReaderMode.RIGHT -> (if (readerMode == mode) "✓ " else "   ") + "→ Derecha"
+                                        ReaderMode.LEFT -> (if (readerMode == mode) "✓ " else "   ") + "← Izquierda"
+                                        ReaderMode.VERTICAL -> (if (readerMode == mode) "✓ " else "   ") + "↓ Vertical"
                                     },
                                     color = if (readerMode == mode) Color(0xFFFF6B00) else Color.White,
                                     fontSize = 14.sp
@@ -314,6 +312,40 @@ fun ReaderScreen(
 }
 
 @Composable
+private fun ReaderBottomBar(
+    currentPage: Int,
+    totalPages: Int,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color(0x80000000))
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Slider(
+            value = currentPage.toFloat(),
+            onValueChange = { },
+            valueRange = 0f..(totalPages - 1).toFloat().coerceAtLeast(1f),
+            modifier = Modifier.weight(1f).height(24.dp),
+            colors = SliderDefaults.colors(
+                thumbColor = Color(0xFFFF6B00),
+                activeTrackColor = Color(0xFFFF6B00),
+                inactiveTrackColor = Color(0x55FFFFFF)
+            )
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "${currentPage + 1} / $totalPages",
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
 private fun ReaderHorizontal(
     pages: List<File>,
     fitMode: ImageFitMode,
@@ -321,7 +353,6 @@ private fun ReaderHorizontal(
     onCenterTap: () -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { pages.size })
-    val actualPage = if (reverse) pages.size - 1 - pagerState.currentPage else pagerState.currentPage
 
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -337,22 +368,6 @@ private fun ReaderHorizontal(
                 onTap = { zone ->
                     if (zone == TapZone.Center) onCenterTap()
                 }
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.7f))
-                .padding(8.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "${actualPage + 1} / ${pages.size}",
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium
             )
         }
     }
