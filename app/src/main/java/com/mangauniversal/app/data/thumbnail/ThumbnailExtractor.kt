@@ -6,14 +6,18 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
-import com.github.junrar.Archive
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.util.zip.ZipFile
+import net.sf.sevenzipjbinding.ExtractOperationResult
+import net.sf.sevenzipjbinding.ISequentialOutStream
+import net.sf.sevenzipjbinding.SevenZip
+import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
 
 class ThumbnailExtractor(private val context: Context) {
 
@@ -78,23 +82,48 @@ class ThumbnailExtractor(private val context: Context) {
 
     private fun extractFromRar(comic: Comic): Bitmap? {
         val file = File(comic.path)
-        try {
-            Archive(file).use { archive ->
-                val header = archive.fileHeaders
-                    .filter { !it.isDirectory && isImage(it.fileName) }
-                    .minByOrNull { it.fileName.lowercase() }
-                    ?: return null
+        val temp = File(context.cacheDir, "temp_thumb_${comic.id.hashCode()}.img")
+        var randomAccessFile: RandomAccessFile? = null
 
-                val temp = File(context.cacheDir, "temp_thumb_${comic.id.hashCode()}.img")
-                FileOutputStream(temp).use { out ->
-                    archive.extractFile(header, out)
+        try {
+            randomAccessFile = RandomAccessFile(file, "r")
+            val archive = SevenZip.openInArchive(null, RandomAccessFileInStream(randomAccessFile))
+            val simpleArchive = archive.simpleInterface
+            val item = simpleArchive.archiveItems
+                ?.filter { !it.isFolder && isImage(it.path) }
+                ?.minByOrNull { it.path.lowercase() }
+                ?: run {
+                    archive.close()
+                    return null
                 }
-                val bmp = BitmapFactory.decodeFile(temp.absolutePath)
+
+            // Extraer a archivo temporal
+            val result = item.extractSlow(object : ISequentialOutStream {
+                override fun write(data: ByteArray): Int {
+                    return try {
+                        FileOutputStream(temp, true).use { out -> out.write(data) }
+                        data.size
+                    } catch (e: Exception) {
+                        0
+                    }
+                }
+            })
+
+            archive.close()
+
+            if (result != ExtractOperationResult.OK) {
                 temp.delete()
-                return bmp
+                return null
             }
+
+            val bmp = BitmapFactory.decodeFile(temp.absolutePath)
+            temp.delete()
+            return bmp
         } catch (e: Exception) {
+            temp.delete()
             return null
+        } finally {
+            try { randomAccessFile?.close() } catch (e: Exception) { }
         }
     }
 
