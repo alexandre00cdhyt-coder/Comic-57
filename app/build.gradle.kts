@@ -18,6 +18,19 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        ndk {
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = false
+        }
     }
 
     buildTypes {
@@ -62,7 +75,9 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
-    implementation(libs.junrar)
+
+    implementation(libs.sevenzipjbinding)
+    implementation(libs.sevenzipjbinding.all.platforms)
 
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
