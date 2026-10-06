@@ -23,24 +23,20 @@ private val Context.progressDataStore: DataStore<Preferences> by preferencesData
     name = "progress_prefs"
 )
 
-private val Context.historyDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "history_prefs"
-)
-
 class ReaderPreferences(private val context: Context) {
 
     companion object {
         private val KEY_MODE = stringPreferencesKey("reader_mode")
         private val KEY_VERTICAL_ZOOM = floatPreferencesKey("vertical_zoom")
+        private val KEY_PROGRESS_ALL = stringPreferencesKey("progress_all")
+        private val KEY_HISTORY_ALL = stringPreferencesKey("history_all")
+
         const val MIN_VERTICAL_ZOOM = 0.5f
         const val MAX_VERTICAL_ZOOM = 1.5f
         const val DEFAULT_VERTICAL_ZOOM = 1.0f
 
-        // Prefijos
-        private const val PROGRESS_PREFIX = "progress_"
-        private const val TIMESTAMP_PREFIX = "timestamp_"
-        private const val HISTORY_LIST_KEY = "history_list"
-        private const val HISTORY_SEP = "|||"
+        private const val ENTRY_SEP = "|||"
+        private const val FIELD_SEP = "::"
     }
 
     // ─────────── MODO DE LECTURA ───────────
@@ -85,13 +81,15 @@ class ReaderPreferences(private val context: Context) {
         }
     }
 
-    // ─────────── PROGRESO ───────────
+    // ─────────── PROGRESO (una sola clave con todo) ───────────
 
     suspend fun saveProgress(comicId: String, page: Int) {
         try {
             context.progressDataStore.edit { prefs ->
-                val key = stringPreferencesKey(PROGRESS_PREFIX + comicId.hashCode().toString())
-                prefs[key] = page.toString()
+                val raw = prefs[KEY_PROGRESS_ALL] ?: ""
+                val map = decodeProgress(raw).toMutableMap()
+                map[comicId] = page
+                prefs[KEY_PROGRESS_ALL] = encodeProgress(map)
             }
         } catch (e: Exception) {
         }
@@ -100,64 +98,65 @@ class ReaderPreferences(private val context: Context) {
     suspend fun getProgress(comicId: String): Int {
         return try {
             val prefs = context.progressDataStore.data.first()
-            val key = stringPreferencesKey(PROGRESS_PREFIX + comicId.hashCode().toString())
-            val value = prefs[key] ?: return 0
-            value.toIntOrNull() ?: 0
+            val raw = prefs[KEY_PROGRESS_ALL] ?: return 0
+            decodeProgress(raw)[comicId] ?: 0
         } catch (e: Exception) {
             0
         }
     }
 
-    // ─────────── HISTORIAL ───────────
+    private fun encodeProgress(map: Map<String, Int>): String {
+        return map.entries.joinToString(ENTRY_SEP) { (k, v) ->
+            "$k$FIELD_SEP$v"
+        }
+    }
 
-    /**
-     * Añade un cómic al historial con su timestamp.
-     * Se guarda como lista separada por "|||".
-     * Formato: "comicId:timestamp|||comicId:timestamp|||..."
-     */
+    private fun decodeProgress(raw: String): Map<String, Int> {
+        if (raw.isBlank()) return emptyMap()
+        return raw.split(ENTRY_SEP).mapNotNull { entry ->
+            val parts = entry.split(FIELD_SEP, limit = 2)
+            if (parts.size < 2) return@mapNotNull null
+            val key = parts[0]
+            val value = parts[1].toIntOrNull() ?: return@mapNotNull null
+            key to value
+        }.toMap()
+    }
+
+    // ─────────── HISTORIAL (una sola clave con todo) ───────────
+
     suspend fun addToHistory(comicId: String, comicTitle: String, comicPath: String) {
         try {
-            context.historyDataStore.edit { prefs ->
-                val raw = prefs[HISTORY_LIST_KEY] ?: ""
-                val entries = if (raw.isBlank()) mutableListOf() else raw.split(HISTORY_SEP).toMutableList()
+            context.progressDataStore.edit { prefs ->
+                val raw = prefs[KEY_HISTORY_ALL] ?: ""
+                val entries = decodeHistory(raw).toMutableList()
 
                 // Quitar el cómic si ya está
-                entries.removeAll { it.startsWith("$comicId:") }
+                entries.removeAll { it.comicId == comicId }
 
-                // Añadir con timestamp actual al principio
-                val timestamp = System.currentTimeMillis()
-                val entry = "$comicId:$timestamp:$comicTitle:$comicPath"
-                entries.add(0, entry)
+                // Añadir al principio con timestamp actual
+                entries.add(
+                    0,
+                    HistoryEntry(
+                        comicId = comicId,
+                        timestamp = System.currentTimeMillis(),
+                        title = comicTitle,
+                        path = comicPath
+                    )
+                )
 
                 // Guardar solo los últimos 100
                 val limited = entries.take(100)
-
-                prefs[HISTORY_LIST_KEY] = limited.joinToString(HISTORY_SEP)
+                prefs[KEY_HISTORY_ALL] = encodeHistory(limited)
             }
         } catch (e: Exception) {
         }
     }
 
-    /**
-     * Devuelve la lista de cómics leídos.
-     * Formato: Lista de (comicId, timestamp, title, path) ordenada por más reciente.
-     */
     suspend fun getHistory(): List<HistoryEntry> {
         return try {
-            val prefs = context.historyDataStore.data.first()
-            val raw = prefs[HISTORY_LIST_KEY] ?: ""
-            if (raw.isBlank()) return emptyList()
-
-            raw.split(HISTORY_SEP).mapNotNull { entry ->
-                val parts = entry.split(":", limit = 4)
-                if (parts.size < 4) return@mapNotNull null
-                HistoryEntry(
-                    comicId = parts[0],
-                    timestamp = parts[1].toLongOrNull() ?: 0L,
-                    title = parts[2],
-                    path = parts[3]
-                )
-            }.sortedByDescending { it.timestamp }
+            val prefs = context.progressDataStore.data.first()
+            val raw = prefs[KEY_HISTORY_ALL] ?: ""
+            decodeHistory(raw).sortedByDescending { it.timestamp }
         } catch (e: Exception) {
             emptyList()
         }
@@ -165,10 +164,39 @@ class ReaderPreferences(private val context: Context) {
 
     suspend fun clearHistory() {
         try {
-            context.historyDataStore.edit { prefs ->
-                prefs[HISTORY_LIST_KEY] = ""
+            context.progressDataStore.edit { prefs ->
+                prefs[KEY_HISTORY_ALL] = ""
             }
         } catch (e: Exception) {
+        }
+    }
+
+    private fun encodeHistory(entries: List<HistoryEntry>): String {
+        return entries.joinToString(ENTRY_SEP) { e ->
+            listOf(
+                e.comicId.replace(FIELD_SEP, ""),
+                e.timestamp.toString(),
+                e.title.replace(FIELD_SEP, "").replace(ENTRY_SEP, ""),
+                e.path.replace(FIELD_SEP, "").replace(ENTRY_SEP, "")
+            ).joinToString(FIELD_SEP)
+        }
+    }
+
+    private fun decodeHistory(raw: String): List<HistoryEntry> {
+        if (raw.isBlank()) return emptyList()
+        return raw.split(ENTRY_SEP).mapNotNull { entry ->
+            val parts = entry.split(FIELD_SEP)
+            if (parts.size < 4) return@mapNotNull null
+            try {
+                HistoryEntry(
+                    comicId = parts[0],
+                    timestamp = parts[1].toLongOrNull() ?: 0L,
+                    title = parts[2],
+                    path = parts[3]
+                )
+            } catch (e: Exception) {
+                null
+            }
         }
     }
 }
