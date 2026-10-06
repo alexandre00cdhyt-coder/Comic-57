@@ -18,10 +18,6 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-
-        ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
-        }
     }
 
     splits {
@@ -77,7 +73,7 @@ dependencies {
     implementation(libs.coil.gif)
 
     implementation(libs.sevenzipjbinding)
-    implementation(libs.sevenzipjbinding.all.platforms)
+    implementation(libs.sevenzipjbinding.all)
 
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
