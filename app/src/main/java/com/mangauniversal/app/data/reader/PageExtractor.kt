@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
-import com.github.junrar.Archive
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
 import com.mangauniversal.app.data.scanner.NaturalOrderComparator
@@ -12,7 +11,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.util.zip.ZipFile
+import net.sf.sevenzipjbinding.ExtractOperationResult
+import net.sf.sevenzipjbinding.IInArchive
+import net.sf.sevenzipjbinding.ISequentialOutStream
+import net.sf.sevenzipjbinding.SevenZip
+import net.sf.sevenzipjbinding.SevenZipException
+import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
+import net.sf.sevenzipjbinding.simple.ISimpleInArchiveItem
 
 class PageExtractor(private val context: Context) {
 
@@ -105,33 +112,61 @@ class PageExtractor(private val context: Context) {
         return outFiles
     }
 
+    /**
+     * Extrae archivos de RAR (4 y 5) y 7Z usando sevenzipjbinding.
+     */
     private fun extractRar(comic: Comic, targetDir: File): List<File> {
         val file = File(comic.path)
         val outFiles = mutableListOf<File>()
+        var archive: IInArchive? = null
+        var randomAccessFile: RandomAccessFile? = null
 
         try {
-            Archive(file).use { archive ->
-                val headers = archive.fileHeaders
-                    .filter { !it.isDirectory && isImage(it.fileName) }
-                    .sortedWith(compareBy(NaturalOrderComparator()) { it.fileName })
+            randomAccessFile = RandomAccessFile(file, "r")
+            archive = SevenZip.openInArchive(null, RandomAccessFileInStream(randomAccessFile))
 
-                var index = 0
-                for (header in headers) {
-                    index++
-                    val ext = header.fileName.substringAfterLast('.', "jpg")
-                    val outFile = File(targetDir, String.format("%05d.%s", index, ext))
-                    try {
-                        FileOutputStream(outFile).use { out ->
-                            archive.extractFile(header, out)
+            val simpleArchive = archive.simpleInterface
+            val items = simpleArchive.archiveItems
+                ?.filter { !it.isFolder && isImage(it.path) }
+                ?.sortedWith(compareBy(NaturalOrderComparator()) { it.path })
+                ?: emptyList()
+
+            var index = 0
+            for (item in items) {
+                index++
+                val ext = item.path.substringAfterLast('.', "jpg")
+                val outFile = File(targetDir, String.format("%05d.%s", index, ext))
+
+                try {
+                    val result = item.extractSlow(object : ISequentialOutStream {
+                        override fun write(data: ByteArray): Int {
+                            try {
+                                FileOutputStream(outFile, true).use { out ->
+                                    out.write(data)
+                                }
+                                return data.size
+                            } catch (e: Exception) {
+                                return 0
+                            }
                         }
-                        if (outFile.exists() && outFile.length() > 0) outFiles.add(outFile)
-                    } catch (e: Exception) {
+                    })
+
+                    if (result == ExtractOperationResult.OK && outFile.exists() && outFile.length() > 0) {
+                        outFiles.add(outFile)
+                    } else {
+                        outFile.delete()
                     }
+                } catch (e: Exception) {
+                    outFile.delete()
                 }
             }
         } catch (e: Exception) {
             return emptyList()
+        } finally {
+            try { archive?.close() } catch (e: Exception) { }
+            try { randomAccessFile?.close() } catch (e: Exception) { }
         }
+
         return outFiles
     }
 
