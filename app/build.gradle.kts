@@ -62,6 +62,8 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
+    implementation(libs.junrar)
+
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 
