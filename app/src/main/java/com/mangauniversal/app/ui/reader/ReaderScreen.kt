@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -40,7 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +52,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.reader.PageExtractor
 import com.mangauniversal.app.data.settings.ReaderMode
@@ -175,7 +180,6 @@ fun ReaderScreen(
                     )
                     ReaderMode.VERTICAL -> ReaderVertical(
                         pages = pages!!,
-                        fitMode = fitMode,
                         onCenterTap = { controlsVisible = !controlsVisible }
                     )
                 }
@@ -230,14 +234,6 @@ fun ReaderScreen(
                         .padding(horizontal = 8.dp)
                 )
             }
-        }
-
-        if (pages != null && controlsVisible) {
-            ReaderBottomBar(
-                currentPage = 0,
-                totalPages = pages!!.size,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
         }
 
         if (showModeDialog) {
@@ -312,40 +308,6 @@ fun ReaderScreen(
 }
 
 @Composable
-private fun ReaderBottomBar(
-    currentPage: Int,
-    totalPages: Int,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color(0x80000000))
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Slider(
-            value = currentPage.toFloat(),
-            onValueChange = { },
-            valueRange = 0f..(totalPages - 1).toFloat().coerceAtLeast(1f),
-            modifier = Modifier.weight(1f).height(24.dp),
-            colors = SliderDefaults.colors(
-                thumbColor = Color(0xFFFF6B00),
-                activeTrackColor = Color(0xFFFF6B00),
-                inactiveTrackColor = Color(0x55FFFFFF)
-            )
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = "${currentPage + 1} / $totalPages",
-            color = Color.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-@Composable
 private fun ReaderHorizontal(
     pages: List<File>,
     fitMode: ImageFitMode,
@@ -373,27 +335,44 @@ private fun ReaderHorizontal(
     }
 }
 
+/**
+ * Modo Vertical tipo webtoon / CDisplayEx / ComicScreen.
+ * Las imágenes se apilan una debajo de otra, sin huecos,
+ * ocupando siempre todo el ancho. Forman una tira continua.
+ * Sin zoom, solo scroll.
+ */
 @Composable
 private fun ReaderVertical(
     pages: List<File>,
-    fitMode: ImageFitMode,
     onCenterTap: () -> Unit
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
-        ) {
-            items(pages.size) { index ->
-                ZoomablePage(
-                    file = pages[index],
-                    pageKey = index,
-                    contentScale = fitMode.contentScale,
-                    onTap = { zone ->
-                        if (zone == TapZone.Center) onCenterTap()
-                    }
-                )
-            }
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val targetWidthPx = with(density) {
+        configuration.screenWidthDp.dp.roundToPx()
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .clickable(onClick = onCenterTap),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
+    ) {
+        items(pages.size) { index ->
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(pages[index])
+                    .size(targetWidthPx * 2)
+                    .crossfade(false)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.FillWidth,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+            )
         }
     }
 }
