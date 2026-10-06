@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -97,7 +98,6 @@ fun ReaderScreen(
     var currentPage by remember { mutableIntStateOf(0) }
     var initialPage by remember { mutableIntStateOf(0) }
 
-    // Índice del cómic actual y siguiente
     val currentIndex = comicsList.indexOfFirst { it.id == comic.id }
     val nextComic = if (currentIndex >= 0 && currentIndex < comicsList.size - 1) {
         comicsList[currentIndex + 1]
@@ -110,13 +110,11 @@ fun ReaderScreen(
         }
     }
 
-    // Cargar modo + progreso inicial
     LaunchedEffect(Unit) {
         readerMode = prefs.getMode()
         initialPage = prefs.getProgress(comic.id)
     }
 
-    // Guardar en historial al abrir
     LaunchedEffect(comic.id) {
         prefs.addToHistory(comic.id, comic.title, comic.path)
     }
@@ -131,9 +129,7 @@ fun ReaderScreen(
 
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
-            // Guardar progreso al salir
             scope.launch { prefs.saveProgress(comic.id, currentPage) }
-            // Guardar zoom vertical si estábamos en vertical
         }
     }
 
@@ -164,7 +160,6 @@ fun ReaderScreen(
         isLoading = false
     }
 
-    // Guardar progreso cada vez que cambia la página
     LaunchedEffect(currentPage) {
         if (pages != null && pages!!.isNotEmpty()) {
             prefs.saveProgress(comic.id, currentPage)
@@ -206,7 +201,6 @@ fun ReaderScreen(
                         reverse = false,
                         initialPage = initialPage,
                         isLastComic = nextComic == null,
-                        nextTitle = nextComic?.title,
                         onPageChanged = { currentPage = it },
                         onCenterTap = { controlsVisible = !controlsVisible },
                         onNextComic = {
@@ -220,7 +214,6 @@ fun ReaderScreen(
                         reverse = true,
                         initialPage = initialPage,
                         isLastComic = nextComic == null,
-                        nextTitle = nextComic?.title,
                         onPageChanged = { currentPage = it },
                         onCenterTap = { controlsVisible = !controlsVisible },
                         onNextComic = {
@@ -237,7 +230,6 @@ fun ReaderScreen(
             }
         }
 
-        // ─── BARRA SUPERIOR ───
         AnimatedVisibility(
             visible = controlsVisible,
             enter = fadeIn(),
@@ -273,7 +265,6 @@ fun ReaderScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                // Ir al principio
                 Text(
                     text = "<#",
                     fontSize = 15.sp,
@@ -282,7 +273,6 @@ fun ReaderScreen(
                         .clickable { currentPage = 0 }
                         .padding(horizontal = 6.dp)
                 )
-                // Ir al final
                 Text(
                     text = "#>",
                     fontSize = 15.sp,
@@ -312,7 +302,6 @@ fun ReaderScreen(
             }
         }
 
-        // ─── BARRA INFERIOR CON SLIDER ───
         if (pages != null && controlsVisible) {
             val totalPages = pages!!.size
             Row(
@@ -344,7 +333,6 @@ fun ReaderScreen(
             }
         }
 
-        // ─── DIÁLOGO MODO ───
         if (showModeDialog) {
             AlertDialog(
                 onDismissRequest = { showModeDialog = false },
@@ -382,7 +370,6 @@ fun ReaderScreen(
             )
         }
 
-        // ─── DIÁLOGO AJUSTE ───
         if (showFitDialog) {
             AlertDialog(
                 onDismissRequest = { showFitDialog = false },
@@ -424,7 +411,6 @@ private fun ReaderHorizontal(
     reverse: Boolean,
     initialPage: Int,
     isLastComic: Boolean,
-    nextTitle: String?,
     onPageChanged: (Int) -> Unit,
     onCenterTap: () -> Unit,
     onNextComic: () -> Unit
@@ -435,7 +421,6 @@ private fun ReaderHorizontal(
         pageCount = { pages.size }
     )
 
-    // Notificar cambios de página
     LaunchedEffect(pagerState.currentPage) {
         onPageChanged(pagerState.currentPage)
     }
@@ -457,7 +442,6 @@ private fun ReaderHorizontal(
             )
         }
 
-        // ─── FLECHITA para ir al siguiente cómic ───
         val isLastPage = pagerState.currentPage == pages.size - 1
         if (isLastPage && !isLastComic) {
             Box(
@@ -465,7 +449,7 @@ private fun ReaderHorizontal(
                     .align(Alignment.BottomEnd)
                     .padding(bottom = 60.dp, end = 20.dp)
                     .size(56.dp)
-                    .background(Color(0xCCFF6B00), shape = androidx.compose.foundation.shape.CircleShape)
+                    .background(Color(0xCCFF6B00), shape = CircleShape)
                     .clickable { onNextComic() },
                 contentAlignment = Alignment.Center
             ) {
@@ -494,7 +478,6 @@ private fun ReaderVertical(
     }
     val listState = rememberLazyListState()
 
-    // Notificar cambio de página según scroll
     LaunchedEffect(listState.firstVisibleItemIndex) {
         onPageChanged(listState.firstVisibleItemIndex)
     }
@@ -516,4 +499,10 @@ private fun ReaderVertical(
                     .build(),
                 contentDescription = null,
                 contentScale = ContentScale.FillWidth,
-                modifier = M
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+            )
+        }
+    }
+}
