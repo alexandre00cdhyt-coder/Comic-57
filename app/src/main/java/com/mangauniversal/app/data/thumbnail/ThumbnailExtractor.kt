@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import com.github.junrar.Archive
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
 import kotlinx.coroutines.Dispatchers
@@ -14,10 +15,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipFile
 
-/**
- * Extrae la primera imagen de un cómic y la guarda como miniatura.
- * Se cachea en: /data/data/com.mangauniversal.app/cache/thumbs/
- */
 class ThumbnailExtractor(private val context: Context) {
 
     private val thumbsDir: File by lazy {
@@ -32,26 +29,22 @@ class ThumbnailExtractor(private val context: Context) {
                 return@withContext outFile
             }
 
-            // Extraer bitmap según tipo
             val extracted: Bitmap? = when (comic.type) {
                 ComicType.FOLDER -> extractFromFolder(comic)
                 ComicType.CBZ, ComicType.ZIP -> extractFromZip(comic)
                 ComicType.PDF -> extractFromPdf(comic)
+                ComicType.CBR, ComicType.RAR -> extractFromRar(comic)
                 else -> null
             }
 
-            // Si no se pudo extraer, salir
             if (extracted == null) return@withContext null
 
-            // Escalar (aquí ya no es null)
             val scaled: Bitmap = scaleBitmap(extracted, 400)
 
-            // Guardar como JPEG
             FileOutputStream(outFile).use { out ->
                 scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
             }
 
-            // Liberar bitmaps
             if (scaled !== extracted) scaled.recycle()
             extracted.recycle()
 
@@ -80,6 +73,28 @@ class ThumbnailExtractor(private val context: Context) {
             zip.getInputStream(imageEntry).use { input ->
                 return BitmapFactory.decodeStream(input)
             }
+        }
+    }
+
+    private fun extractFromRar(comic: Comic): Bitmap? {
+        val file = File(comic.path)
+        try {
+            Archive(file).use { archive ->
+                val header = archive.fileHeaders
+                    .filter { !it.isDirectory && isImage(it.fileName) }
+                    .minByOrNull { it.fileName.lowercase() }
+                    ?: return null
+
+                val temp = File(context.cacheDir, "temp_thumb_${comic.id.hashCode()}.img")
+                FileOutputStream(temp).use { out ->
+                    archive.extractFile(header, out)
+                }
+                val bmp = BitmapFactory.decodeFile(temp.absolutePath)
+                temp.delete()
+                return bmp
+            }
+        } catch (e: Exception) {
+            return null
         }
     }
 
