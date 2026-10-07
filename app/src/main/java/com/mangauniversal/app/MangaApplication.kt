@@ -16,7 +16,7 @@ class MangaApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
 
-        // Inicializar sevenzipjbinding para poder leer RAR 4/5 y 7Z
+        // Inicializar sevenzipjbinding (para RAR/ZIP/7Z)
         try {
             SevenZip.initSevenZipFromPlatformJAR()
             Log.d("MangaUniversal", "sevenzipjbinding inicializado correctamente")
@@ -29,7 +29,7 @@ class MangaApplication : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader {
         val context = this
 
-        // Calcular el tamaño de caché basado en la RAM del dispositivo
+        // Caché de Coil basado en la RAM del dispositivo
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val memoryClass = activityManager.memoryClass  // en MB
         val cacheSizeMb = (memoryClass * 0.15).toInt().coerceIn(100, 400)
