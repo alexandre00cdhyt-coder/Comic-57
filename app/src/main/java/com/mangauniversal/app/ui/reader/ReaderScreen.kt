@@ -87,7 +87,6 @@ fun ReaderScreen(
     val context = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
-    // Scope GLOBAL para guardar incluso al cerrar el composable
     val globalScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
     val prefs = remember { ReaderPreferences(context) }
 
@@ -115,19 +114,16 @@ fun ReaderScreen(
         }
     }
 
-    // Cargar modo + progreso inicial ANTES de mostrar el pager
     LaunchedEffect(Unit) {
         readerMode = prefs.getMode()
         val saved = prefs.getProgress(comic.id)
         initialPage = saved
     }
 
-    // Guardar en historial al abrir
     LaunchedEffect(comic.id) {
         prefs.addToHistory(comic.id, comic.title, comic.path)
     }
 
-    // Guardar progreso al salir (usando globalScope para que no se cancele)
     DisposableEffect(comic.id) {
         val activity = view.context as? Activity
         val window = activity?.window
@@ -138,7 +134,6 @@ fun ReaderScreen(
 
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
-            // Guardar progreso con GLOBAL SCOPE para que no se cancele
             globalScope.launch {
                 prefs.saveProgress(comic.id, currentPage)
                 prefs.addToHistory(comic.id, comic.title, comic.path)
@@ -174,14 +169,11 @@ fun ReaderScreen(
         isLoading = false
     }
 
-    // Guardar progreso cada vez que cambia la página
     LaunchedEffect(currentPage) {
         if (pagesLoaded && pages != null && pages!!.isNotEmpty()) {
             prefs.saveProgress(comic.id, currentPage)
         }
-    }
-
-    Box(
+    }    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
@@ -250,7 +242,6 @@ fun ReaderScreen(
             }
         }
 
-        // ─── BARRA SUPERIOR ───
         AnimatedVisibility(
             visible = controlsVisible,
             enter = fadeIn(),
@@ -323,7 +314,6 @@ fun ReaderScreen(
             }
         }
 
-        // ─── BARRA INFERIOR CON SLIDER ───
         if (pages != null && controlsVisible) {
             val totalPages = pages!!.size
             Row(
@@ -423,10 +413,7 @@ fun ReaderScreen(
                 containerColor = Color(0xFF1A1A1A)
             )
         }
-    }
-}
-
-@Composable
+    }@Composable
 private fun ReaderHorizontal(
     pages: List<File>,
     fitMode: ImageFitMode,
@@ -437,14 +424,12 @@ private fun ReaderHorizontal(
     onCenterTap: () -> Unit,
     onNextComic: () -> Unit
 ) {
-    // Si initialPage es -1 (aún no cargado), usar 0
     val safeInitial = if (initialPage < 0) 0 else initialPage.coerceIn(0, pages.size - 1)
     val pagerState = rememberPagerState(
         initialPage = safeInitial,
         pageCount = { pages.size }
     )
 
-    // Notificar cambios de página
     LaunchedEffect(pagerState.currentPage) {
         onPageChanged(pagerState.currentPage)
     }
@@ -504,7 +489,54 @@ private fun ReaderVertical(
     }
     val listState = rememberLazyListState()
 
-    // Notificar cambio de página según scroll
     LaunchedEffect(listState.firstVisibleItemIndex) {
         onPageChanged(listState.firstVisibleItemIndex)
-        
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .clickable(onClick = onCenterTap),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            items(pages.size) { index ->
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(pages[index])
+                        .size(targetWidthPx * 2)
+                        .crossfade(false)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.FillWidth,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                )
+            }
+        }
+
+        val isAtEnd = listState.firstVisibleItemIndex >= pages.size - 3
+        if (isAtEnd && !isLastComic) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 60.dp, end = 20.dp)
+                    .size(56.dp)
+                    .background(Color(0xCCFF6B00), shape = CircleShape)
+                    .clickable { onNextComic() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "→",
+                    fontSize = 28.sp,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+}
