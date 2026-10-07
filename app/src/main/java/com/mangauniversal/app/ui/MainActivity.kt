@@ -8,19 +8,14 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,12 +30,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangauniversal.app.data.folder.FolderConfig
@@ -90,6 +83,14 @@ fun MangaUniversalApp() {
         pendingPathAfterPermission = path
         showPermissionDialog = true
         openAllFilesSettings(context.packageName, context)
+    }
+
+    // ═══ GESTOR DE ATRÁS GLOBAL ═══
+    // En el home → cierra la app
+    // En otras pantallas → el gesto lo maneja cada pantalla con su propio BackHandler
+    BackHandler(enabled = currentScreen is Screen.Home) {
+        // En el home, si toca atrás → cierra la app
+        // (comportamiento por defecto de Android)
     }
 
     if (showPermissionDialog) {
@@ -156,6 +157,11 @@ fun MangaUniversalApp() {
             startPath = screen.path,
             favoriteFolders = folders.map { it.path },
             onBack = { currentScreen = Screen.Home },
+            onOpenComic = { comic ->
+                comicsInFolder = listOf(comic)
+                selectedComic = comic
+                currentScreen = Screen.Reader(comic)
+            },
             onToggleFavorite = { path ->
                 scope.launch {
                     val name = java.io.File(path).name.ifEmpty { path }
@@ -181,6 +187,7 @@ fun MangaUniversalApp() {
             onBack = { currentScreen = Screen.Home },
             onOpenComic = { newComic ->
                 selectedComic = newComic
+                comicsInFolder = listOf(newComic)
                 currentScreen = Screen.Reader(newComic)
             }
         )
