@@ -16,14 +16,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,10 +36,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mangauniversal.app.data.model.Comic
-import com.mangauniversal.app.data.model.detectComicType
+import com.mangauniversal.app.data.model.ComicType
 import com.mangauniversal.app.data.settings.HistoryEntry
 import com.mangauniversal.app.data.settings.ReaderPreferences
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -48,22 +50,77 @@ fun HistoryScreen(
     onOpenComic: (Comic, List<Comic>) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val prefs = remember { ReaderPreferences(context) }
 
     var history by remember { mutableStateOf<List<HistoryEntry>?>(null) }
     var progressMap by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var pageCountMap by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var entryToDelete by remember { mutableStateOf<HistoryEntry?>(null) }
 
-    LaunchedEffect(Unit) {
+    // Cargar historial + progreso
+    suspend fun loadHistory() {
         val h = withContext(Dispatchers.IO) { prefs.getHistory() }
         history = h
 
-        // Cargar progreso de cada cómic del historial
-        val map = mutableMapOf<String, Int>()
+        val progress = mutableMapOf<String, Int>()
+        val pages = mutableMapOf<String, Int>()
+
         for (entry in h) {
             val p = withContext(Dispatchers.IO) { prefs.getProgress(entry.comicId) }
-            map[entry.comicId] = p
+            progress[entry.comicId] = p
+
+            // Intentar detectar el total de páginas
+            val file = File(entry.path)
+            val pageCount = withContext(Dispatchers.IO) {
+                try {
+                    when {
+                        file.isDirectory -> file.listFiles()?.count { it.isFile } ?: 0
+                        else -> 0 // PDF/ZIP se calcula al abrir
+                    }
+                } catch (e: Exception) { 0 }
+            }
+            pages[entry.comicId] = pageCount
         }
-        progressMap = map
+        progressMap = progress
+        pageCountMap = pages
+    }
+
+    LaunchedEffect(Unit) {
+        loadHistory()
+    }
+
+    // Diálogo borrar del historial
+    if (entryToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { entryToDelete = null },
+            title = { Text("Quitar del historial", color = Color.White, fontSize = 16.sp) },
+            text = {
+                Text(
+                    "¿Quitar \"${entryToDelete!!.title}\" del historial?\n\n(El archivo NO se borra)",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val id = entryToDelete!!.comicId
+                    entryToDelete = null
+                    scope.launch {
+                        prefs.removeFromHistory(id)
+                        loadHistory()
+                    }
+                }) {
+                    Text("Quitar", color = Color(0xFFFF5555), fontSize = 13.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { entryToDelete = null }) {
+                    Text("Cancelar", color = Color.White, fontSize = 13.sp)
+                }
+            },
+            containerColor = Color(0xFF1A1A1A)
+        )
     }
 
     Column(
@@ -77,19 +134,19 @@ fun HistoryScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                onClick = onBack,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B4EAA)),
-                modifier = Modifier.width(60.dp)
-            ) {
-                Text("←", fontSize = 18.sp, color = Color.White)
-            }
-            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "←",
+                fontSize = 22.sp,
+                color = Color.White,
+                modifier = Modifier
+                    .clickable { onBack() }
+                    .padding(end = 12.dp, start = 4.dp)
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "📖 Historial",
                     color = Color.White,
-                    fontSize = 16.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
@@ -130,7 +187,6 @@ fun HistoryScreen(
             }
 
             else -> {
-                // Contador
                 Text(
                     text = "✅ ${history!!.size} cómics leídos",
                     color = Color(0xFFFF6B00),
@@ -140,23 +196,34 @@ fun HistoryScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Lista de cómics del historial
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(history!!, key = { it.comicId }) { entry ->
-                        val currentProgress = progressMap[entry.comicId] ?: 0
-                        val comic = remember(entry) {
-                            entryToComic(entry)
-                        }
+                        val progress = progressMap[entry.comicId] ?: 0
+                        val pageCount = pageCountMap[entry.comicId] ?: 0
                         HistoryRow(
                             entry = entry,
-                            comic = comic,
-                            currentPage = currentProgress,
+                            currentPage = progress,
+                            totalPages = pageCount,
                             onClick = {
-                                // Al tocar, abrir el cómic
+                                // Abrir el cómic en la página donde lo dejaste
+                                val file = File(entry.path)
+                                val type = detectType(file.name)
+                                val comic = Comic(
+                                    id = entry.comicId,
+                                    title = entry.title,
+                                    path = entry.path,
+                                    type = type,
+                                    folder = file.parentFile?.name ?: "",
+                                    lastModified = file.lastModified(),
+                                    sizeBytes = file.length()
+                                )
                                 onOpenComic(comic, listOf(comic))
+                            },
+                            onMenu = {
+                                entryToDelete = entry
                             }
                         )
                     }
@@ -169,36 +236,41 @@ fun HistoryScreen(
 @Composable
 private fun HistoryRow(
     entry: HistoryEntry,
-    comic: Comic,
     currentPage: Int,
-    onClick: () -> Unit
+    totalPages: Int,
+    onClick: () -> Unit,
+    onMenu: () -> Unit
 ) {
+    val percentage = if (totalPages > 0) {
+        ((currentPage.toFloat() / totalPages) * 100).toInt().coerceIn(0, 100)
+    } else 0
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(Color(0xFF1A1A1A))
             .clickable(onClick = onClick)
-            .padding(10.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Icono según tipo
+        // Icono tipo
         Box(
             modifier = Modifier
                 .size(50.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(6.dp))
                 .background(Color(0xFF2A2A2A)),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = when (comic.type) {
-                    com.mangauniversal.app.data.model.ComicType.CBZ -> "📕"
-                    com.mangauniversal.app.data.model.ComicType.CBR -> "📕"
-                    com.mangauniversal.app.data.model.ComicType.ZIP -> "📦"
-                    com.mangauniversal.app.data.model.ComicType.RAR -> "📦"
-                    com.mangauniversal.app.data.model.ComicType.SEVEN_ZIP -> "📦"
-                    com.mangauniversal.app.data.model.ComicType.PDF -> "📄"
-                    com.mangauniversal.app.data.model.ComicType.FOLDER -> "📁"
+                text = when (detectType(entry.title)) {
+                    ComicType.CBZ -> "📕"
+                    ComicType.CBR -> "📕"
+                    ComicType.ZIP -> "📦"
+                    ComicType.RAR -> "📦"
+                    ComicType.SEVEN_ZIP -> "📦"
+                    ComicType.PDF -> "📄"
+                    ComicType.FOLDER -> "📁"
                     else -> "❓"
                 },
                 fontSize = 24.sp
@@ -208,6 +280,7 @@ private fun HistoryRow(
         Spacer(modifier = Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
+            // Título
             Text(
                 text = entry.title,
                 color = Color.White,
@@ -216,37 +289,95 @@ private fun HistoryRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = if (currentPage > 0) {
-                    "Página ${currentPage + 1} · ${formatRelativeTime(entry.timestamp)}"
-                } else {
-                    formatRelativeTime(entry.timestamp)
-                },
-                color = Color(0xFFFF6B00),
-                fontSize = 11.sp
-            )
+
+            // Info
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = formatSize(File(entry.path).length()),
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 11.sp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = formatRelativeTime(entry.timestamp),
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 11.sp
+                )
+            }
+
+            // Página actual / total
+            if (currentPage > 0 || totalPages > 0) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (totalPages > 0) {
+                        "$currentPage / $totalPages"
+                    } else {
+                        "Página $currentPage"
+                    },
+                    color = Color(0xFFFF6B00),
+                    fontSize = 11.sp
+                )
+            }
+
+            // Barra de progreso
+            if (percentage > 0) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0xFF2A2A2A))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(percentage / 100f)
+                            .height(3.dp)
+                            .background(Color(0xFFFF6B00))
+                    )
+                }
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = "$percentage%",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 10.sp
+                )
+            }
         }
 
+        // Menú ⋮
         Text(
-            text = "›",
-            fontSize = 22.sp,
-            color = Color.White.copy(alpha = 0.4f)
+            text = "⋮",
+            fontSize = 20.sp,
+            color = Color.White.copy(alpha = 0.5f),
+            modifier = Modifier
+                .clickable(onClick = onMenu)
+                .padding(start = 8.dp, end = 4.dp)
         )
     }
 }
 
-private fun entryToComic(entry: HistoryEntry): Comic {
-    val path = entry.path
-    val fileName = File(path).name
-    val type = detectComicType(fileName)
-    return Comic(
-        id = entry.comicId,
-        title = entry.title,
-        path = path,
-        type = type,
-        folder = File(path).parentFile?.name ?: ""
-    )
+private fun detectType(fileName: String): ComicType {
+    return when (fileName.substringAfterLast('.', "").lowercase()) {
+        "cbz" -> ComicType.CBZ
+        "cbr" -> ComicType.CBR
+        "zip" -> ComicType.ZIP
+        "rar" -> ComicType.RAR
+        "7z" -> ComicType.SEVEN_ZIP
+        "pdf" -> ComicType.PDF
+        else -> ComicType.UNKNOWN
+    }
+}
+
+private fun formatSize(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024L * 1024L * 1024L -> "${bytes / (1024 * 1024)} MB"
+        else -> "${bytes / (1024L * 1024L * 1024L)} GB"
+    }
 }
 
 private fun formatRelativeTime(timestamp: Long): String {
