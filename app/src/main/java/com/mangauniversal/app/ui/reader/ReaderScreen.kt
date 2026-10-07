@@ -62,7 +62,9 @@ import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.reader.PageExtractor
 import com.mangauniversal.app.data.settings.ReaderMode
 import com.mangauniversal.app.data.settings.ReaderPreferences
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -85,6 +87,8 @@ fun ReaderScreen(
     val context = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
+    // Scope GLOBAL para guardar incluso al cerrar el composable
+    val globalScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
     val prefs = remember { ReaderPreferences(context) }
 
     var pages by remember { mutableStateOf<List<File>?>(null) }
@@ -96,7 +100,8 @@ fun ReaderScreen(
     var showFitDialog by remember { mutableStateOf(false) }
     var showModeDialog by remember { mutableStateOf(false) }
     var currentPage by remember { mutableIntStateOf(0) }
-    var initialPage by remember { mutableIntStateOf(0) }
+    var initialPage by remember { mutableIntStateOf(-1) }
+    var pagesLoaded by remember { mutableStateOf(false) }
 
     val currentIndex = comicsList.indexOfFirst { it.id == comic.id }
     val nextComic = if (currentIndex >= 0 && currentIndex < comicsList.size - 1) {
@@ -110,16 +115,20 @@ fun ReaderScreen(
         }
     }
 
+    // Cargar modo + progreso inicial ANTES de mostrar el pager
     LaunchedEffect(Unit) {
         readerMode = prefs.getMode()
-        initialPage = prefs.getProgress(comic.id)
+        val saved = prefs.getProgress(comic.id)
+        initialPage = saved
     }
 
+    // Guardar en historial al abrir
     LaunchedEffect(comic.id) {
         prefs.addToHistory(comic.id, comic.title, comic.path)
     }
 
-    DisposableEffect(Unit) {
+    // Guardar progreso al salir (usando globalScope para que no se cancele)
+    DisposableEffect(comic.id) {
         val activity = view.context as? Activity
         val window = activity?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
@@ -129,7 +138,11 @@ fun ReaderScreen(
 
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
-            scope.launch { prefs.saveProgress(comic.id, currentPage) }
+            // Guardar progreso con GLOBAL SCOPE para que no se cancele
+            globalScope.launch {
+                prefs.saveProgress(comic.id, currentPage)
+                prefs.addToHistory(comic.id, comic.title, comic.path)
+            }
         }
     }
 
@@ -137,7 +150,7 @@ fun ReaderScreen(
         if (controlsVisible) {
             controlsVisible = false
         } else {
-            scope.launch { prefs.saveProgress(comic.id, currentPage) }
+            globalScope.launch { prefs.saveProgress(comic.id, currentPage) }
             onBack()
         }
     }
@@ -153,6 +166,7 @@ fun ReaderScreen(
                 errorMessage = "No se pudieron cargar las páginas"
             } else {
                 pages = result
+                pagesLoaded = true
             }
         } catch (e: Exception) {
             errorMessage = "Error: ${e.message}"
@@ -160,8 +174,9 @@ fun ReaderScreen(
         isLoading = false
     }
 
+    // Guardar progreso cada vez que cambia la página
     LaunchedEffect(currentPage) {
-        if (pages != null && pages!!.isNotEmpty()) {
+        if (pagesLoaded && pages != null && pages!!.isNotEmpty()) {
             prefs.saveProgress(comic.id, currentPage)
         }
     }
@@ -188,7 +203,7 @@ fun ReaderScreen(
                     Text(errorMessage!!, color = Color(0xFFFF5555), fontSize = 13.sp)
                     Spacer(modifier = Modifier.height(16.dp))
                     TextButton(onClick = {
-                        scope.launch { prefs.saveProgress(comic.id, currentPage) }
+                        globalScope.launch { prefs.saveProgress(comic.id, currentPage) }
                         onBack()
                     }) { Text("Volver", color = Color.White) }
                 }
@@ -204,7 +219,7 @@ fun ReaderScreen(
                         onPageChanged = { currentPage = it },
                         onCenterTap = { controlsVisible = !controlsVisible },
                         onNextComic = {
-                            scope.launch { prefs.saveProgress(comic.id, currentPage) }
+                            globalScope.launch { prefs.saveProgress(comic.id, currentPage) }
                             nextComic?.let { onOpenComic(it) }
                         }
                     )
@@ -217,19 +232,25 @@ fun ReaderScreen(
                         onPageChanged = { currentPage = it },
                         onCenterTap = { controlsVisible = !controlsVisible },
                         onNextComic = {
-                            scope.launch { prefs.saveProgress(comic.id, currentPage) }
+                            globalScope.launch { prefs.saveProgress(comic.id, currentPage) }
                             nextComic?.let { onOpenComic(it) }
                         }
                     )
                     ReaderMode.VERTICAL -> ReaderVertical(
                         pages = pages!!,
+                        isLastComic = nextComic == null,
                         onPageChanged = { currentPage = it },
-                        onCenterTap = { controlsVisible = !controlsVisible }
+                        onCenterTap = { controlsVisible = !controlsVisible },
+                        onNextComic = {
+                            globalScope.launch { prefs.saveProgress(comic.id, currentPage) }
+                            nextComic?.let { onOpenComic(it) }
+                        }
                     )
                 }
             }
         }
 
+        // ─── BARRA SUPERIOR ───
         AnimatedVisibility(
             visible = controlsVisible,
             enter = fadeIn(),
@@ -249,7 +270,7 @@ fun ReaderScreen(
                     color = Color.White,
                     modifier = Modifier
                         .clickable {
-                            scope.launch { prefs.saveProgress(comic.id, currentPage) }
+                            globalScope.launch { prefs.saveProgress(comic.id, currentPage) }
                             onBack()
                         }
                         .padding(horizontal = 8.dp)
@@ -302,6 +323,7 @@ fun ReaderScreen(
             }
         }
 
+        // ─── BARRA INFERIOR CON SLIDER ───
         if (pages != null && controlsVisible) {
             val totalPages = pages!!.size
             Row(
@@ -415,12 +437,14 @@ private fun ReaderHorizontal(
     onCenterTap: () -> Unit,
     onNextComic: () -> Unit
 ) {
-    val safeInitial = initialPage.coerceIn(0, pages.size - 1)
+    // Si initialPage es -1 (aún no cargado), usar 0
+    val safeInitial = if (initialPage < 0) 0 else initialPage.coerceIn(0, pages.size - 1)
     val pagerState = rememberPagerState(
         initialPage = safeInitial,
         pageCount = { pages.size }
     )
 
+    // Notificar cambios de página
     LaunchedEffect(pagerState.currentPage) {
         onPageChanged(pagerState.currentPage)
     }
@@ -467,8 +491,10 @@ private fun ReaderHorizontal(
 @Composable
 private fun ReaderVertical(
     pages: List<File>,
+    isLastComic: Boolean,
     onPageChanged: (Int) -> Unit,
-    onCenterTap: () -> Unit
+    onCenterTap: () -> Unit,
+    onNextComic: () -> Unit
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -478,31 +504,7 @@ private fun ReaderVertical(
     }
     val listState = rememberLazyListState()
 
+    // Notificar cambio de página según scroll
     LaunchedEffect(listState.firstVisibleItemIndex) {
         onPageChanged(listState.firstVisibleItemIndex)
-    }
-
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .clickable(onClick = onCenterTap),
-        verticalArrangement = Arrangement.spacedBy(0.dp)
-    ) {
-        items(pages.size) { index ->
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(pages[index])
-                    .size(targetWidthPx * 2)
-                    .crossfade(false)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.FillWidth,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .wrapContentHeight()
-            )
-        }
-    }
-}
+        
