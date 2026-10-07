@@ -16,11 +16,7 @@ enum class ReaderMode {
 }
 
 private val Context.readerDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "reader_prefs"
-)
-
-private val Context.progressDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "progress_prefs"
+    name = "reader_prefs_v3"
 )
 
 class ReaderPreferences(private val context: Context) {
@@ -35,11 +31,9 @@ class ReaderPreferences(private val context: Context) {
         const val MAX_VERTICAL_ZOOM = 1.5f
         const val DEFAULT_VERTICAL_ZOOM = 1.0f
 
-        private const val ENTRY_SEP = "|||"
-        private const val FIELD_SEP = "::"
+        private const val ENTRY_SEP = "@@@"
+        private const val FIELD_SEP = "###"
     }
-
-    // ─────────── MODO DE LECTURA ───────────
 
     suspend fun getMode(): ReaderMode {
         return try {
@@ -60,8 +54,6 @@ class ReaderPreferences(private val context: Context) {
         }
     }
 
-    // ─────────── ZOOM VERTICAL ───────────
-
     suspend fun getVerticalZoom(): Float {
         return try {
             val prefs = context.readerDataStore.data.first()
@@ -81,11 +73,9 @@ class ReaderPreferences(private val context: Context) {
         }
     }
 
-    // ─────────── PROGRESO (una sola clave con todo) ───────────
-
     suspend fun saveProgress(comicId: String, page: Int) {
         try {
-            context.progressDataStore.edit { prefs ->
+            context.readerDataStore.edit { prefs ->
                 val raw = prefs[KEY_PROGRESS_ALL] ?: ""
                 val map = decodeProgress(raw).toMutableMap()
                 map[comicId] = page
@@ -97,7 +87,7 @@ class ReaderPreferences(private val context: Context) {
 
     suspend fun getProgress(comicId: String): Int {
         return try {
-            val prefs = context.progressDataStore.data.first()
+            val prefs = context.readerDataStore.data.first()
             val raw = prefs[KEY_PROGRESS_ALL] ?: return 0
             decodeProgress(raw)[comicId] ?: 0
         } catch (e: Exception) {
@@ -122,29 +112,24 @@ class ReaderPreferences(private val context: Context) {
         }.toMap()
     }
 
-    // ─────────── HISTORIAL (una sola clave con todo) ───────────
-
     suspend fun addToHistory(comicId: String, comicTitle: String, comicPath: String) {
         try {
-            context.progressDataStore.edit { prefs ->
+            context.readerDataStore.edit { prefs ->
                 val raw = prefs[KEY_HISTORY_ALL] ?: ""
                 val entries = decodeHistory(raw).toMutableList()
 
-                // Quitar el cómic si ya está
                 entries.removeAll { it.comicId == comicId }
 
-                // Añadir al principio con timestamp actual
                 entries.add(
                     0,
                     HistoryEntry(
                         comicId = comicId,
                         timestamp = System.currentTimeMillis(),
-                        title = comicTitle,
-                        path = comicPath
+                        title = comicTitle.replace(FIELD_SEP, "").replace(ENTRY_SEP, ""),
+                        path = comicPath.replace(FIELD_SEP, "").replace(ENTRY_SEP, "")
                     )
                 )
 
-                // Guardar solo los últimos 100
                 val limited = entries.take(100)
                 prefs[KEY_HISTORY_ALL] = encodeHistory(limited)
             }
@@ -154,7 +139,7 @@ class ReaderPreferences(private val context: Context) {
 
     suspend fun getHistory(): List<HistoryEntry> {
         return try {
-            val prefs = context.progressDataStore.data.first()
+            val prefs = context.readerDataStore.data.first()
             val raw = prefs[KEY_HISTORY_ALL] ?: ""
             decodeHistory(raw).sortedByDescending { it.timestamp }
         } catch (e: Exception) {
@@ -164,7 +149,7 @@ class ReaderPreferences(private val context: Context) {
 
     suspend fun clearHistory() {
         try {
-            context.progressDataStore.edit { prefs ->
+            context.readerDataStore.edit { prefs ->
                 prefs[KEY_HISTORY_ALL] = ""
             }
         } catch (e: Exception) {
@@ -174,10 +159,10 @@ class ReaderPreferences(private val context: Context) {
     private fun encodeHistory(entries: List<HistoryEntry>): String {
         return entries.joinToString(ENTRY_SEP) { e ->
             listOf(
-                e.comicId.replace(FIELD_SEP, ""),
+                e.comicId,
                 e.timestamp.toString(),
-                e.title.replace(FIELD_SEP, "").replace(ENTRY_SEP, ""),
-                e.path.replace(FIELD_SEP, "").replace(ENTRY_SEP, "")
+                e.title,
+                e.path
             ).joinToString(FIELD_SEP)
         }
     }
@@ -201,9 +186,6 @@ class ReaderPreferences(private val context: Context) {
     }
 }
 
-/**
- * Entrada del historial.
- */
 data class HistoryEntry(
     val comicId: String,
     val timestamp: Long,
