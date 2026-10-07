@@ -160,26 +160,20 @@ fun FolderFlowScreen() {
             onCancel = { showPicker = false }
         )
 
-        showHistory -> {
-            com.mangauniversal.app.ui.history.HistoryScreen(
-                onBack = { showHistory = false },
-                onOpenComic = { comic, list ->
-                    comicsInFolder = list
-                    selectedComic = comic
-                    showHistory = false
-                }
-            )
-        }
+        showHistory -> com.mangauniversal.app.ui.history.HistoryScreen(
+            onBack = { showHistory = false },
+            onOpenComic = { comic, list ->
+                comicsInFolder = list
+                selectedComic = comic
+                showHistory = false
+            }
+        )
 
         selectedComic != null -> com.mangauniversal.app.ui.reader.ReaderScreen(
             comic = selectedComic!!,
             comicsList = comicsInFolder,
-            onBack = {
-                selectedComic = null
-            },
-            onOpenComic = { newComic ->
-                selectedComic = newComic
-            }
+            onBack = { selectedComic = null },
+            onOpenComic = { newComic -> selectedComic = newComic }
         )
 
         selectedFolder != null -> LibraryScreen(
@@ -282,11 +276,12 @@ fun FoldersHomeScreen(
             )
             Text(
                 text = "📖",
-                fontSize = 20.sp,
+                fontSize = 22.sp,
                 color = Color.White,
                 modifier = Modifier
-                    .clickable(onClick = onOpenHistory)
-                    .padding(horizontal = 8.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onOpenHistory() }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
             )
         }
 
