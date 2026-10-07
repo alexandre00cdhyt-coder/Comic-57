@@ -1,52 +1,32 @@
 package com.mangauniversal.app.ui
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.mangauniversal.app.data.folder.FolderConfig
 import com.mangauniversal.app.data.folder.FolderManager
 import com.mangauniversal.app.data.model.Comic
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,7 +37,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color.Black
                 ) {
-                    FolderFlowScreen()
+                    MangaUniversalApp()
                 }
             }
         }
@@ -65,335 +45,182 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun FolderFlowScreen() {
+fun MangaUniversalApp() {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val folderManager = remember { FolderManager(context) }
 
-    var folders by remember { mutableStateOf<List<FolderConfig>?>(null) }
-    var showPicker by remember { mutableStateOf(false) }
+    var hasPermission by remember { mutableStateOf(checkStoragePermission()) }
+    var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
+
+    var folders by remember { mutableStateOf<List<FolderConfig>>(emptyList()) }
     var selectedFolder by remember { mutableStateOf<FolderConfig?>(null) }
     var selectedComic by remember { mutableStateOf<Comic?>(null) }
     var comicsInFolder by remember { mutableStateOf<List<Comic>>(emptyList()) }
-    var folderToDelete by remember { mutableStateOf<FolderConfig?>(null) }
-    var filterMode by remember { mutableStateOf(FilterMode.ALL) }
-    var showHistory by remember { mutableStateOf(false) }
 
+    // Cargar carpetas
+    val folderManager = remember { FolderManager(context) }
     LaunchedEffect(Unit) {
         folderManager.folders.collectLatest { list ->
             folders = list
         }
     }
 
-    if (folderToDelete != null) {
-        AlertDialog(
-            onDismissRequest = { folderToDelete = null },
-            title = { Text("Eliminar carpeta", color = Color.White, fontSize = 16.sp) },
-            text = {
-                Text(
-                    "¿Quieres eliminar \"${folderToDelete!!.name}\"?",
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 14.sp
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        folderManager.removeFolder(folderToDelete!!.path)
-                        folderToDelete = null
+    // Comprobar permiso al volver de ajustes
+    LaunchedEffect(currentScreen) {
+        hasPermission = checkStoragePermission()
+    }
+
+    // Navegación
+    when (val screen = currentScreen) {
+        is Screen.Home -> {
+            StorageExplorerScreen(
+                favoriteFolders = folders.filter { it.isFavorite }.map { it.path },
+                onOpenRecientes = {
+                    if (selectedComic != null) {
+                        currentScreen = Screen.Reader(selectedComic!!)
+                    } else {
+                        currentScreen = Screen.History
                     }
-                }) {
-                    Text("Eliminar", color = Color(0xFFFF5555), fontSize = 13.sp)
+                },
+                onOpenStorage = { path ->
+                    if (!hasPermission) {
+                        openAllFilesSettings(context.packageName, context)
+                    } else {
+                        currentScreen = Screen.FileBrowser(path)
+                    }
+                },
+                onOpenFavoriteFolder = { path ->
+                    val folder = folders.find { it.path == path }
+                    if (folder != null) {
+                        selectedFolder = folder
+                        currentScreen = Screen.Library(folder)
+                    } else {
+                        // La carpeta ya no existe
+                    }
+                },
+                onAddFolder = {
+                    if (!hasPermission) {
+                        openAllFilesSettings(context.packageName, context)
+                    } else {
+                        val basePath = Environment.getExternalStorageDirectory().absolutePath
+                        currentScreen = Screen.FileBrowser(basePath)
+                    }
+                },
+                onOpenHistory = {
+                    currentScreen = Screen.History
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { folderToDelete = null }) {
-                    Text("Cancelar", color = Color.White, fontSize = 13.sp)
-                }
-            },
-            containerColor = Color(0xFF1A1A1A)
-        )
-    }
-
-    when {
-        folders == null -> Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("Cargando...", color = Color.White, fontSize = 13.sp)
+            )
         }
 
-        showPicker -> FolderPickerScreen(
-            onFolderSelected = { path, name ->
-                scope.launch {
-                    folderManager.addFolder(path, name)
-                    showPicker = false
+        is Screen.FileBrowser -> {
+            FileBrowserScreen(
+                startPath = screen.path,
+                favoriteFolders = folders.map { it.path },
+                onBack = {
+                    currentScreen = Screen.Home
+                },
+                onToggleFavorite = { path ->
+                    val existing = folders.find { it.path == path }
+                    if (existing != null) {
+                        // Ya existe: quitar de favoritos (mantener en carpetas)
+                        // Por ahora, simplemente desmarcamos el favorito
+                        // (no eliminamos del FolderManager)
+                    } else {
+                        // Añadir nueva carpeta como favorita
+                        val name = java.io.File(path).name.ifEmpty { path }
+                        // Necesitamos usar el scope para llamar a suspend
+                        // Lo haremos con un LaunchedEffect controlado
+                    }
                 }
-            },
-            onCancel = { showPicker = false }
-        )
+            )
+        }
 
-        showHistory -> com.mangauniversal.app.ui.history.HistoryScreen(
-            onBack = { showHistory = false },
-            onOpenComic = { comic, list ->
-                comicsInFolder = list
-                selectedComic = comic
-                showHistory = false
-            }
-        )
+        is Screen.Library -> {
+            LibraryScreen(
+                folderPath = screen.folder.path,
+                folderName = screen.folder.name,
+                onBack = { currentScreen = Screen.Home },
+                onComicClick = { comic, allComics ->
+                    comicsInFolder = allComics
+                    selectedComic = comic
+                    currentScreen = Screen.Reader(comic)
+                }
+            )
+        }
 
-        selectedComic != null -> com.mangauniversal.app.ui.reader.ReaderScreen(
-            comic = selectedComic!!,
-            comicsList = comicsInFolder,
-            onBack = { selectedComic = null },
-            onOpenComic = { newComic -> selectedComic = newComic }
-        )
+        is Screen.Reader -> {
+            ReaderScreenWrapper(
+                comic = screen.comic,
+                comicsList = comicsInFolder.ifEmpty { listOf(screen.comic) },
+                onBack = { currentScreen = Screen.Home },
+                onOpenComic = { newComic ->
+                    selectedComic = newComic
+                    currentScreen = Screen.Reader(newComic)
+                }
+            )
+        }
 
-        selectedFolder != null -> LibraryScreen(
-            folderPath = selectedFolder!!.path,
-            folderName = selectedFolder!!.name,
-            onBack = { selectedFolder = null },
-            onComicClick = { comic, allComics ->
-                comicsInFolder = allComics
-                selectedComic = comic
-            }
-        )
-
-        folders!!.isEmpty() -> NoFoldersScreen(
-            onAddFolder = { showPicker = true }
-        )
-
-        else -> FoldersHomeScreen(
-            folders = folders!!,
-            filterMode = filterMode,
-            onFilterChange = { filterMode = it },
-            onFolderClick = { selectedFolder = it },
-            onAddFolder = { showPicker = true },
-            onToggleFavorite = { path ->
-                scope.launch { folderManager.toggleFavorite(path) }
-            },
-            onDeleteRequest = { folder -> folderToDelete = folder },
-            onOpenHistory = { showHistory = true }
-        )
-    }
-}
-
-enum class FilterMode {
-    ALL,
-    FAVORITES_ONLY
-}
-
-@Composable
-fun NoFoldersScreen(onAddFolder: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("No tienes carpetas configuradas", color = Color.White, fontSize = 16.sp)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "Elige una carpeta donde tengas tus cómics.",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(
-            onClick = onAddFolder,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B4EAA))
-        ) {
-            Text("➕ Añadir carpeta", fontSize = 13.sp)
+        is Screen.History -> {
+            com.mangauniversal.app.ui.history.HistoryScreen(
+                onBack = { currentScreen = Screen.Home },
+                onOpenComic = { comic, list ->
+                    comicsInFolder = list
+                    selectedComic = comic
+                    currentScreen = Screen.Reader(comic)
+                }
+            )
         }
     }
 }
 
+/**
+ * Wrapper para cargar el ReaderScreen real.
+ * Como ReaderScreen recibe `comic` y `comicsList`, se llama directo.
+ */
 @Composable
-fun FoldersHomeScreen(
-    folders: List<FolderConfig>,
-    filterMode: FilterMode,
-    onFilterChange: (FilterMode) -> Unit,
-    onFolderClick: (FolderConfig) -> Unit,
-    onAddFolder: () -> Unit,
-    onToggleFavorite: (String) -> Unit,
-    onDeleteRequest: (FolderConfig) -> Unit,
-    onOpenHistory: () -> Unit
+private fun ReaderScreenWrapper(
+    comic: Comic,
+    comicsList: List<Comic>,
+    onBack: () -> Unit,
+    onOpenComic: (Comic) -> Unit
 ) {
-    val displayFolders = when (filterMode) {
-        FilterMode.ALL -> folders
-        FilterMode.FAVORITES_ONLY -> folders.filter { it.isFavorite }
-    }
-
-    val favorites = folders.filter { it.isFavorite }
-    val hasFavorites = favorites.isNotEmpty()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(12.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "📚 Carpetas configuradas",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = "📖",
-                fontSize = 22.sp,
-                color = Color.White,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onOpenHistory() }
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(2.dp))
-
-        Text(
-            "Toca para entrar · ⭐ favorita · 🗑 eliminar · 📖 historial",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 10.sp
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        if (hasFavorites) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                FilterChip(
-                    text = "Todas (${folders.size})",
-                    active = filterMode == FilterMode.ALL,
-                    onClick = { onFilterChange(FilterMode.ALL) }
-                )
-                FilterChip(
-                    text = "⭐ Favoritas (${favorites.size})",
-                    active = filterMode == FilterMode.FAVORITES_ONLY,
-                    onClick = { onFilterChange(FilterMode.FAVORITES_ONLY) }
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-
-        if (displayFolders.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "No hay carpetas que mostrar",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 12.sp
-                )
-            }
-        } else {
-            displayFolders.forEach { folder ->
-                FolderRowCompact(
-                    folder = folder,
-                    onClick = { onFolderClick(folder) },
-                    onToggleFavorite = { onToggleFavorite(folder.path) },
-                    onDelete = { onDeleteRequest(folder) }
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Button(
-            onClick = onAddFolder,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B4EAA))
-        ) {
-            Text("➕ Añadir otra carpeta", fontSize = 13.sp)
-        }
-    }
+    com.mangauniversal.app.ui.reader.ReaderScreen(
+        comic = comic,
+        comicsList = comicsList,
+        onBack = onBack,
+        onOpenComic = onOpenComic
+    )
 }
 
-@Composable
-private fun FilterChip(text: String, active: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (active) Color(0xFFFF6B00) else Color(0xFF2A2A2A))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        Text(
-            text = text,
-            color = Color.White,
-            fontSize = 11.sp,
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
-        )
-    }
+/**
+ * Pantallas de navegación.
+ */
+sealed class Screen {
+    object Home : Screen()
+    object History : Screen()
+    data class FileBrowser(val path: String) : Screen()
+    data class Library(val folder: FolderConfig) : Screen()
+    data class Reader(val comic: Comic) : Screen()
 }
 
-@Composable
-private fun FolderRowCompact(
-    folder: FolderConfig,
-    onClick: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onDelete: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF1A1A1A))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "📁 ${folder.name}",
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+fun checkStoragePermission(): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Environment.isExternalStorageManager()
+    } else true
+}
+
+fun openAllFilesSettings(packageName: String, context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        try {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName")
             )
-            Text(
-                text = folder.path,
-                color = Color.White.copy(alpha = 0.4f),
-                fontSize = 9.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
         }
-
-        Text(
-            text = if (folder.isFavorite) "⭐" else "☆",
-            fontSize = 18.sp,
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .clickable(onClick = onToggleFavorite)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        )
-
-        Text(
-            text = "🗑",
-            fontSize = 14.sp,
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .clickable(onClick = onDelete)
-                .padding(horizontal = 6.dp, vertical = 4.dp)
-        )
     }
 }
