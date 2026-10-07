@@ -10,23 +10,44 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mangauniversal.app.data.folder.FolderConfig
 import com.mangauniversal.app.data.folder.FolderManager
 import com.mangauniversal.app.data.model.Comic
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,16 +68,17 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MangaUniversalApp() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var hasPermission by remember { mutableStateOf(checkStoragePermission()) }
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
-
     var folders by remember { mutableStateOf<List<FolderConfig>>(emptyList()) }
-    var selectedFolder by remember { mutableStateOf<FolderConfig?>(null) }
     var selectedComic by remember { mutableStateOf<Comic?>(null) }
     var comicsInFolder by remember { mutableStateOf<List<Comic>>(emptyList()) }
 
-    // Cargar carpetas
+    var showPermissionDialog by remember { mutableStateOf(false) }
+    var pendingPathAfterPermission by remember { mutableStateOf<String?>(null) }
+
     val folderManager = remember { FolderManager(context) }
     LaunchedEffect(Unit) {
         folderManager.folders.collectLatest { list ->
@@ -64,136 +86,164 @@ fun MangaUniversalApp() {
         }
     }
 
-    // Comprobar permiso al volver de ajustes
-    LaunchedEffect(currentScreen) {
-        hasPermission = checkStoragePermission()
+    fun requestPermissionAndOpen(path: String) {
+        pendingPathAfterPermission = path
+        showPermissionDialog = true
+        openAllFilesSettings(context.packageName, context)
     }
 
-    // Navegación
-    when (val screen = currentScreen) {
-        is Screen.Home -> {
-            StorageExplorerScreen(
-                favoriteFolders = folders.filter { it.isFavorite }.map { it.path },
-                onOpenRecientes = {
-                    if (selectedComic != null) {
-                        currentScreen = Screen.Reader(selectedComic!!)
-                    } else {
-                        currentScreen = Screen.History
-                    }
-                },
-                onOpenStorage = { path ->
-                    if (!hasPermission) {
-                        openAllFilesSettings(context.packageName, context)
-                    } else {
+    if (showPermissionDialog) {
+        PermissionDialog(
+            onOpenSettings = {
+                openAllFilesSettings(context.packageName, context)
+            },
+            onConfirm = {
+                val nowHas = checkStoragePermission()
+                hasPermission = nowHas
+                if (nowHas) {
+                    showPermissionDialog = false
+                    val path = pendingPathAfterPermission
+                    pendingPathAfterPermission = null
+                    if (path != null) {
                         currentScreen = Screen.FileBrowser(path)
                     }
-                },
-                onOpenFavoriteFolder = { path ->
-                    val folder = folders.find { it.path == path }
-                    if (folder != null) {
-                        selectedFolder = folder
-                        currentScreen = Screen.Library(folder)
-                    } else {
-                        // La carpeta ya no existe
-                    }
-                },
-                onAddFolder = {
-                    if (!hasPermission) {
-                        openAllFilesSettings(context.packageName, context)
-                    } else {
-                        val basePath = Environment.getExternalStorageDirectory().absolutePath
-                        currentScreen = Screen.FileBrowser(basePath)
-                    }
-                },
-                onOpenHistory = {
+                }
+            },
+            onCancel = {
+                showPermissionDialog = false
+                pendingPathAfterPermission = null
+            }
+        )
+    }
+
+    when (val screen = currentScreen) {
+        is Screen.Home -> StorageExplorerScreen(
+            favoriteFolders = folders.filter { it.isFavorite }.map { it.path },
+            onOpenRecientes = {
+                if (selectedComic != null) {
+                    currentScreen = Screen.Reader(selectedComic!!)
+                } else {
                     currentScreen = Screen.History
                 }
-            )
-        }
-
-        is Screen.FileBrowser -> {
-            FileBrowserScreen(
-                startPath = screen.path,
-                favoriteFolders = folders.map { it.path },
-                onBack = {
-                    currentScreen = Screen.Home
-                },
-                onToggleFavorite = { path ->
-                    val existing = folders.find { it.path == path }
-                    if (existing != null) {
-                        // Ya existe: quitar de favoritos (mantener en carpetas)
-                        // Por ahora, simplemente desmarcamos el favorito
-                        // (no eliminamos del FolderManager)
-                    } else {
-                        // Añadir nueva carpeta como favorita
-                        val name = java.io.File(path).name.ifEmpty { path }
-                        // Necesitamos usar el scope para llamar a suspend
-                        // Lo haremos con un LaunchedEffect controlado
-                    }
+            },
+            onOpenStorage = { path ->
+                if (hasPermission) {
+                    currentScreen = Screen.FileBrowser(path)
+                } else {
+                    requestPermissionAndOpen(path)
                 }
-            )
-        }
-
-        is Screen.Library -> {
-            LibraryScreen(
-                folderPath = screen.folder.path,
-                folderName = screen.folder.name,
-                onBack = { currentScreen = Screen.Home },
-                onComicClick = { comic, allComics ->
-                    comicsInFolder = allComics
-                    selectedComic = comic
-                    currentScreen = Screen.Reader(comic)
+            },
+            onOpenFavoriteFolder = { path ->
+                val folder = folders.find { it.path == path }
+                if (folder != null) {
+                    currentScreen = Screen.Library(folder)
                 }
-            )
-        }
-
-        is Screen.Reader -> {
-            ReaderScreenWrapper(
-                comic = screen.comic,
-                comicsList = comicsInFolder.ifEmpty { listOf(screen.comic) },
-                onBack = { currentScreen = Screen.Home },
-                onOpenComic = { newComic ->
-                    selectedComic = newComic
-                    currentScreen = Screen.Reader(newComic)
+            },
+            onAddFolder = {
+                if (hasPermission) {
+                    val base = Environment.getExternalStorageDirectory().absolutePath
+                    currentScreen = Screen.FileBrowser(base)
+                } else {
+                    requestPermissionAndOpen(Environment.getExternalStorageDirectory().absolutePath)
                 }
-            )
-        }
+            },
+            onOpenHistory = {
+                currentScreen = Screen.History
+            }
+        )
 
-        is Screen.History -> {
-            com.mangauniversal.app.ui.history.HistoryScreen(
-                onBack = { currentScreen = Screen.Home },
-                onOpenComic = { comic, list ->
-                    comicsInFolder = list
-                    selectedComic = comic
-                    currentScreen = Screen.Reader(comic)
+        is Screen.FileBrowser -> FileBrowserScreen(
+            startPath = screen.path,
+            favoriteFolders = folders.map { it.path },
+            onBack = { currentScreen = Screen.Home },
+            onToggleFavorite = { path ->
+                scope.launch {
+                    val name = java.io.File(path).name.ifEmpty { path }
+                    folderManager.addFolder(path, name)
                 }
-            )
-        }
+            }
+        )
+
+        is Screen.Library -> LibraryScreen(
+            folderPath = screen.folder.path,
+            folderName = screen.folder.name,
+            onBack = { currentScreen = Screen.Home },
+            onComicClick = { comic, allComics ->
+                comicsInFolder = allComics
+                selectedComic = comic
+                currentScreen = Screen.Reader(comic)
+            }
+        )
+
+        is Screen.Reader -> com.mangauniversal.app.ui.reader.ReaderScreen(
+            comic = screen.comic,
+            comicsList = comicsInFolder.ifEmpty { listOf(screen.comic) },
+            onBack = { currentScreen = Screen.Home },
+            onOpenComic = { newComic ->
+                selectedComic = newComic
+                currentScreen = Screen.Reader(newComic)
+            }
+        )
+
+        is Screen.History -> com.mangauniversal.app.ui.history.HistoryScreen(
+            onBack = { currentScreen = Screen.Home },
+            onOpenComic = { comic, list ->
+                comicsInFolder = list
+                selectedComic = comic
+                currentScreen = Screen.Reader(comic)
+            }
+        )
     }
 }
 
-/**
- * Wrapper para cargar el ReaderScreen real.
- * Como ReaderScreen recibe `comic` y `comicsList`, se llama directo.
- */
 @Composable
-private fun ReaderScreenWrapper(
-    comic: Comic,
-    comicsList: List<Comic>,
-    onBack: () -> Unit,
-    onOpenComic: (Comic) -> Unit
+fun PermissionDialog(
+    onOpenSettings: () -> Unit,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
 ) {
-    com.mangauniversal.app.ui.reader.ReaderScreen(
-        comic = comic,
-        comicsList = comicsList,
-        onBack = onBack,
-        onOpenComic = onOpenComic
+    AlertDialog(
+        onDismissRequest = onCancel,
+        containerColor = Color(0xFF1A1A1A),
+        title = {
+            Text(
+                text = "Acceso a archivos",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Para explorar tus cómics, la app necesita acceso a todos los archivos.",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "1. Abre ajustes y activa el permiso.\n2. Vuelve y toca \"Ya di el permiso\".",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 12.sp
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))
+            ) {
+                Text("Ya di el permiso", color = Color.White, fontSize = 13.sp)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onOpenSettings) {
+                Text("Abrir ajustes otra vez", color = Color.White, fontSize = 13.sp)
+            }
+        }
     )
 }
 
-/**
- * Pantallas de navegación.
- */
 sealed class Screen {
     object Home : Screen()
     object History : Screen()
