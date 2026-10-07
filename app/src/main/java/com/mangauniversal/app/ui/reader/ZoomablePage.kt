@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,16 +57,15 @@ fun ZoomablePage(
     contentScale: ContentScale = ContentScale.Fit,
     modifier: Modifier = Modifier
 ) {
+    var scale by remember(pageKey) { mutableFloatStateOf(MIN_SCALE) }
+    var offset by remember(pageKey) { mutableStateOf(Offset.Zero) }
     val scaleAnim = remember(pageKey) { Animatable(MIN_SCALE) }
-    val offsetAnim = remember(pageKey) {
-        Animatable(Offset.Zero, Offset.VectorConverter)
-    }
+    val offsetAnim = remember(pageKey) { Animatable(Offset.Zero, Offset.VectorConverter) }
 
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     var imageSize by remember { mutableStateOf(Size.Zero) }
 
     val scope = rememberCoroutineScope()
-
     val context = LocalContext.current
     val density = LocalDensity.current
     val config = LocalConfiguration.current
@@ -101,32 +101,24 @@ fun ZoomablePage(
                             val centroid = event.calculateCentroid(useCurrent = true)
 
                             if (zoomChange != 1f || panChange != Offset.Zero) {
-                                val currentScale = scaleAnim.value
+                                val currentScale = scale
                                 val newScale = (currentScale * zoomChange)
                                     .coerceIn(MIN_SCALE, MAX_SCALE)
                                 val actualZoom = newScale / currentScale
-                                val adjusted = (offsetAnim.value - centroid) * actualZoom +
+                                val adjusted = (offset - centroid) * actualZoom +
                                         centroid + panChange
 
-                                scope.launch {
-                                    scaleAnim.snapTo(newScale)
-                                    offsetAnim.snapTo(
-                                        if (newScale <= MIN_SCALE) Offset.Zero
-                                        else clampOffset(adjusted, newScale)
-                                    )
-                                }
+                                scale = newScale
+                                offset = if (newScale <= MIN_SCALE) Offset.Zero
+                                else clampOffset(adjusted, newScale)
 
                                 event.changes.forEach { if (it.pressed) it.consume() }
                             }
-                        } else if (pointerCount == 1 && scaleAnim.value > MIN_SCALE) {
+                        } else if (pointerCount == 1 && scale > MIN_SCALE) {
                             val change = pressed.first()
                             val delta = change.positionChange()
                             if (abs(delta.x) > 0f || abs(delta.y) > 0f) {
-                                scope.launch {
-                                    offsetAnim.snapTo(
-                                        clampOffset(offsetAnim.value + delta, scaleAnim.value)
-                                    )
-                                }
+                                offset = clampOffset(offset + delta, scale)
                                 change.consume()
                             }
                         }
@@ -136,26 +128,28 @@ fun ZoomablePage(
             .pointerInput(pageKey) {
                 detectTapGestures(
                     onDoubleTap = { tapOffset ->
-                        if (scaleAnim.value > MIN_SCALE + 0.01f) {
+                        if (scale > MIN_SCALE + 0.01f) {
                             scope.launch {
-                                launch {
-                                    scaleAnim.animateTo(
-                                        MIN_SCALE,
-                                        animationSpec = tween(250, easing = FastOutSlowInEasing)
-                                    )
-                                }
+                                scaleAnim.animateTo(
+                                    MIN_SCALE,
+                                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                                )
                                 offsetAnim.animateTo(
                                     Offset.Zero,
                                     animationSpec = tween(250, easing = FastOutSlowInEasing)
                                 )
+                                scale = scaleAnim.value
+                                offset = offsetAnim.value
                             }
                         } else {
                             val newScale = DOUBLE_TAP_SCALE
-                            val adjusted = (offsetAnim.value - tapOffset) *
-                                    (newScale / scaleAnim.value) + tapOffset
+                            val adjusted = (offset - tapOffset) *
+                                    (newScale / scale) + tapOffset
                             val clamped = clampOffset(adjusted, newScale)
 
                             scope.launch {
+                                scaleAnim.snapTo(scale)
+                                offsetAnim.snapTo(offset)
                                 launch {
                                     scaleAnim.animateTo(
                                         newScale,
@@ -164,19 +158,23 @@ fun ZoomablePage(
                                             stiffness = Spring.StiffnessLow
                                         )
                                     )
+                                    scale = scaleAnim.value
                                 }
-                                offsetAnim.animateTo(
-                                    clamped,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = Spring.StiffnessLow
+                                launch {
+                                    offsetAnim.animateTo(
+                                        clamped,
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = Spring.StiffnessLow
+                                        )
                                     )
-                                )
+                                    offset = offsetAnim.value
+                                }
                             }
                         }
                     },
                     onTap = { tapOffset ->
-                        if (scaleAnim.value <= MIN_SCALE + 0.01f) {
+                        if (scale <= MIN_SCALE + 0.01f) {
                             val width = size.width
                             val zone = when {
                                 tapOffset.x < width * 0.3f -> TapZone.Left
@@ -199,6 +197,8 @@ fun ZoomablePage(
                 model = ImageRequest.Builder(context)
                     .data(file)
                     .size(targetWidthPx * 2)
+                    .memoryCacheKey(file.absolutePath)
+                    .diskCacheKey(file.absolutePath)
                     .crossfade(false)
                     .build(),
                 contentDescription = null,
@@ -212,10 +212,10 @@ fun ZoomablePage(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer(
-                        scaleX = scaleAnim.value,
-                        scaleY = scaleAnim.value,
-                        translationX = offsetAnim.value.x,
-                        translationY = offsetAnim.value.y
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
                     )
             )
         }
