@@ -42,12 +42,12 @@ fun ReaderHorizontal(
         pageCount = { pages.size }
     )
 
-    // Notificar cambios de página hacia arriba
+    // Notificar cambios de página
     LaunchedEffect(pagerState.currentPage) {
         onPageChanged(pagerState.currentPage)
     }
 
-    // Saltar a pendingPage si cambia (desde el slider)
+    // Saltar a pendingPage (desde el slider)
     LaunchedEffect(pendingPage) {
         if (pendingPage >= 0 && pendingPage < pages.size && pagerState.currentPage != pendingPage) {
             pagerState.scrollToPage(pendingPage)
