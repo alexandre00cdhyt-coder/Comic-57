@@ -95,8 +95,6 @@ fun ReaderScreen(
         }
     }
 
-    // Cargar modo + progreso inicial
-    // SI HAY PROGRESO GUARDADO → saltamos directamente ahí con pendingPage
     LaunchedEffect(Unit) {
         readerMode = prefs.getMode()
         val saved = prefs.getProgress(comic.id)
@@ -107,12 +105,10 @@ fun ReaderScreen(
         }
     }
 
-    // Guardar en historial al abrir
     LaunchedEffect(comic.id) {
         prefs.addToHistory(comic.id, comic.title, comic.path)
     }
 
-    // Guardar progreso al salir
     DisposableEffect(comic.id) {
         val activity = view.context as? Activity
         val window = activity?.window
@@ -142,7 +138,6 @@ fun ReaderScreen(
         }
     }
 
-    // Cargar páginas
     LaunchedEffect(comic.id) {
         isLoading = true
         errorMessage = null
@@ -162,7 +157,6 @@ fun ReaderScreen(
         isLoading = false
     }
 
-    // Guardar progreso cada vez que cambia de página
     LaunchedEffect(currentPage) {
         if (pagesLoaded && pages != null && pages!!.isNotEmpty()) {
             val idToSave = comic.id
@@ -221,6 +215,7 @@ fun ReaderScreen(
                     ReaderMode.VERTICAL -> ReaderVertical(
                         pages = pages!!,
                         isLastComic = nextComic == null,
+                        pendingPage = pendingPage,
                         onPageChanged = { currentPage = it },
                         onCenterTap = { controlsVisible = !controlsVisible },
                         onNextComic = {
@@ -228,7 +223,8 @@ fun ReaderScreen(
                             val pageToSave = currentPage
                             globalScope.launch { prefs.saveProgress(idToSave, pageToSave) }
                             nextComic?.let { onOpenComic(it) }
-                        }
+                        },
+                        onPendingPageConsumed = { pendingPage = -1 }
                     )
                 }
             }
