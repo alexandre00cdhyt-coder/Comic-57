@@ -29,10 +29,12 @@ fun ReaderHorizontal(
     fitMode: ImageFitMode,
     reverse: Boolean,
     initialPage: Int,
+    pendingPage: Int,
     isLastComic: Boolean,
     onPageChanged: (Int) -> Unit,
     onCenterTap: () -> Unit,
-    onNextComic: () -> Unit
+    onNextComic: () -> Unit,
+    onPendingPageConsumed: () -> Unit
 ) {
     val safeInitial = if (initialPage < 0) 0 else initialPage.coerceIn(0, pages.size - 1)
     val pagerState = rememberPagerState(
@@ -40,8 +42,17 @@ fun ReaderHorizontal(
         pageCount = { pages.size }
     )
 
+    // Notificar cambios de página hacia arriba
     LaunchedEffect(pagerState.currentPage) {
         onPageChanged(pagerState.currentPage)
+    }
+
+    // Saltar a pendingPage si cambia (desde el slider)
+    LaunchedEffect(pendingPage) {
+        if (pendingPage >= 0 && pendingPage < pages.size && pagerState.currentPage != pendingPage) {
+            pagerState.scrollToPage(pendingPage)
+            onPendingPageConsumed()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
