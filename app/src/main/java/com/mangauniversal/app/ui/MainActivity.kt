@@ -1,12 +1,6 @@
 package com.mangauniversal.app.ui
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -21,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -64,30 +57,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color.Black
                 ) {
-                    MangaUniversalApp()
+                    FolderFlowScreen()
                 }
             }
         }
-    }
-}
-
-@Composable
-fun MangaUniversalApp() {
-    val context = LocalContext.current
-    var hasPermission by remember { mutableStateOf(checkStoragePermission()) }
-    var refreshKey by remember { mutableStateOf(0) }
-
-    LaunchedEffect(refreshKey) {
-        hasPermission = checkStoragePermission()
-    }
-
-    if (hasPermission) {
-        FolderFlowScreen()
-    } else {
-        PermissionScreen(
-            onOpenSettings = { openAllFilesSettings(context.packageName, context) },
-            onCheckAgain = { refreshKey++ }
-        )
     }
 }
 
@@ -422,62 +395,5 @@ private fun FolderRowCompact(
                 .clickable(onClick = onDelete)
                 .padding(horizontal = 6.dp, vertical = 4.dp)
         )
-    }
-}
-
-fun checkStoragePermission(): Boolean {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        Environment.isExternalStorageManager()
-    } else true
-}
-
-fun openAllFilesSettings(packageName: String, context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        try {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-            context.startActivity(intent)
-        }
-    }
-}
-
-@Composable
-fun PermissionScreen(onOpenSettings: () -> Unit, onCheckAgain: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Acceso a archivos", color = Color.White, fontSize = 20.sp)
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            "Para escanear tus cómics, la app necesita acceso a todos los archivos.",
-            color = Color.White.copy(alpha = 0.8f),
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(
-            onClick = onOpenSettings,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B4EAA))
-        ) {
-            Text("Abrir ajustes", fontSize = 13.sp)
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = onCheckAgain,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333))
-        ) {
-            Text("Ya di el permiso", fontSize = 13.sp)
-        }
     }
 }
