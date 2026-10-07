@@ -16,7 +16,7 @@ enum class ReaderMode {
 }
 
 private val Context.readerDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "reader_prefs_v3"
+    name = "reader_prefs_v4"
 )
 
 class ReaderPreferences(private val context: Context) {
@@ -34,6 +34,8 @@ class ReaderPreferences(private val context: Context) {
         private const val ENTRY_SEP = "@@@"
         private const val FIELD_SEP = "###"
     }
+
+    // ─────────── MODO DE LECTURA ───────────
 
     suspend fun getMode(): ReaderMode {
         return try {
@@ -54,6 +56,8 @@ class ReaderPreferences(private val context: Context) {
         }
     }
 
+    // ─────────── ZOOM VERTICAL ───────────
+
     suspend fun getVerticalZoom(): Float {
         return try {
             val prefs = context.readerDataStore.data.first()
@@ -72,6 +76,8 @@ class ReaderPreferences(private val context: Context) {
         } catch (e: Exception) {
         }
     }
+
+    // ─────────── PROGRESO ───────────
 
     suspend fun saveProgress(comicId: String, page: Int) {
         try {
@@ -112,6 +118,8 @@ class ReaderPreferences(private val context: Context) {
         }.toMap()
     }
 
+    // ─────────── HISTORIAL ───────────
+
     suspend fun addToHistory(comicId: String, comicTitle: String, comicPath: String) {
         try {
             context.readerDataStore.edit { prefs ->
@@ -144,6 +152,20 @@ class ReaderPreferences(private val context: Context) {
             decodeHistory(raw).sortedByDescending { it.timestamp }
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * Elimina un cómic del historial (no borra el archivo, solo la entrada).
+     */
+    suspend fun removeFromHistory(comicId: String) {
+        try {
+            context.readerDataStore.edit { prefs ->
+                val raw = prefs[KEY_HISTORY_ALL] ?: ""
+                val entries = decodeHistory(raw).filterNot { it.comicId == comicId }
+                prefs[KEY_HISTORY_ALL] = encodeHistory(entries)
+            }
+        } catch (e: Exception) {
         }
     }
 
