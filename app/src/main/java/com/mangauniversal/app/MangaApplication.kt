@@ -9,6 +9,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
+import coil.disk.DiskCache
 import net.sf.sevenzipjbinding.SevenZip
 
 class MangaApplication : Application(), ImageLoaderFactory {
@@ -29,16 +30,25 @@ class MangaApplication : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader {
         val context = this
 
-        // Caché de Coil basado en la RAM del dispositivo
+        // Caché en memoria basado en la RAM del dispositivo
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val memoryClass = activityManager.memoryClass  // en MB
-        val cacheSizeMb = (memoryClass * 0.15).toInt().coerceIn(100, 400)
-        val cacheSizeBytes = cacheSizeMb.toLong() * 1024L * 1024L
+        val memoryCacheMb = (memoryClass * 0.25).toInt().coerceIn(100, 500)
+        val memoryCacheBytes = memoryCacheMb.toLong() * 1024L * 1024L
+
+        // Caché en disco: 512 MB
+        val diskCacheBytes = 512L * 1024L * 1024L
 
         return ImageLoader.Builder(context)
             .memoryCache {
                 coil.memory.MemoryCache.Builder(context)
-                    .maxSizeBytes(cacheSizeBytes.toInt())
+                    .maxSizeBytes(memoryCacheBytes)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(context.cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(diskCacheBytes)
                     .build()
             }
             .crossfade(false)
