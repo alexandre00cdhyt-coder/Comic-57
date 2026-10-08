@@ -16,7 +16,7 @@ enum class ReaderMode {
 }
 
 private val Context.readerDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "reader_prefs_v4"
+    name = "reader_prefs_v5"
 )
 
 class ReaderPreferences(private val context: Context) {
@@ -126,8 +126,10 @@ class ReaderPreferences(private val context: Context) {
                 val raw = prefs[KEY_HISTORY_ALL] ?: ""
                 val entries = decodeHistory(raw).toMutableList()
 
+                // Quitar el cómic si ya existe
                 entries.removeAll { it.comicId == comicId }
 
+                // Añadir al principio con timestamp actual
                 entries.add(
                     0,
                     HistoryEntry(
@@ -138,7 +140,8 @@ class ReaderPreferences(private val context: Context) {
                     )
                 )
 
-                val limited = entries.take(100)
+                // Guardar solo los últimos 200
+                val limited = entries.take(200)
                 prefs[KEY_HISTORY_ALL] = encodeHistory(limited)
             }
         } catch (e: Exception) {
@@ -155,9 +158,6 @@ class ReaderPreferences(private val context: Context) {
         }
     }
 
-    /**
-     * Elimina un cómic del historial (no borra el archivo, solo la entrada).
-     */
     suspend fun removeFromHistory(comicId: String) {
         try {
             context.readerDataStore.edit { prefs ->
