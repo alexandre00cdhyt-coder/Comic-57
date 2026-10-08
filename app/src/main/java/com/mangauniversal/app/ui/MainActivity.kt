@@ -10,12 +10,10 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -65,6 +63,8 @@ fun MangaUniversalApp() {
 
     var hasPermission by remember { mutableStateOf(checkStoragePermission()) }
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var previousScreen by remember { mutableStateOf<Screen>(Screen.Home) }
+
     var folders by remember { mutableStateOf<List<FolderConfig>>(emptyList()) }
     var selectedComic by remember { mutableStateOf<Comic?>(null) }
     var comicsInFolder by remember { mutableStateOf<List<Comic>>(emptyList()) }
@@ -85,12 +85,9 @@ fun MangaUniversalApp() {
         openAllFilesSettings(context.packageName, context)
     }
 
-    // ═══ GESTOR DE ATRÁS GLOBAL ═══
-    // En el home → cierra la app
-    // En otras pantallas → el gesto lo maneja cada pantalla con su propio BackHandler
+    // Gesto de atrás global: en el home cierra la app
     BackHandler(enabled = currentScreen is Screen.Home) {
-        // En el home, si toca atrás → cierra la app
-        // (comportamiento por defecto de Android)
+        // Comportamiento por defecto: cerrar la app
     }
 
     if (showPermissionDialog) {
@@ -106,6 +103,7 @@ fun MangaUniversalApp() {
                     val path = pendingPathAfterPermission
                     pendingPathAfterPermission = null
                     if (path != null) {
+                        previousScreen = Screen.Home
                         currentScreen = Screen.FileBrowser(path)
                     }
                 }
@@ -121,14 +119,13 @@ fun MangaUniversalApp() {
         is Screen.Home -> StorageExplorerScreen(
             favoriteFolders = folders.filter { it.isFavorite }.map { it.path },
             onOpenRecientes = {
-                if (selectedComic != null) {
-                    currentScreen = Screen.Reader(selectedComic!!)
-                } else {
-                    currentScreen = Screen.History
-                }
+                // SIEMPRE va al historial completo (no al último cómic)
+                previousScreen = Screen.Home
+                currentScreen = Screen.History
             },
             onOpenStorage = { path ->
                 if (hasPermission) {
+                    previousScreen = Screen.Home
                     currentScreen = Screen.FileBrowser(path)
                 } else {
                     requestPermissionAndOpen(path)
@@ -137,18 +134,21 @@ fun MangaUniversalApp() {
             onOpenFavoriteFolder = { path ->
                 val folder = folders.find { it.path == path }
                 if (folder != null) {
+                    previousScreen = Screen.Home
                     currentScreen = Screen.Library(folder)
                 }
             },
             onAddFolder = {
                 if (hasPermission) {
                     val base = Environment.getExternalStorageDirectory().absolutePath
+                    previousScreen = Screen.Home
                     currentScreen = Screen.FileBrowser(base)
                 } else {
                     requestPermissionAndOpen(Environment.getExternalStorageDirectory().absolutePath)
                 }
             },
             onOpenHistory = {
+                previousScreen = Screen.Home
                 currentScreen = Screen.History
             }
         )
@@ -156,10 +156,11 @@ fun MangaUniversalApp() {
         is Screen.FileBrowser -> FileBrowserScreen(
             startPath = screen.path,
             favoriteFolders = folders.map { it.path },
-            onBack = { currentScreen = Screen.Home },
+            onBack = { currentScreen = previousScreen },
             onOpenComic = { comic ->
                 comicsInFolder = listOf(comic)
                 selectedComic = comic
+                previousScreen = Screen.FileBrowser(screen.path)   // ← recordar de dónde venimos
                 currentScreen = Screen.Reader(comic)
             },
             onToggleFavorite = { path ->
@@ -173,10 +174,11 @@ fun MangaUniversalApp() {
         is Screen.Library -> LibraryScreen(
             folderPath = screen.folder.path,
             folderName = screen.folder.name,
-            onBack = { currentScreen = Screen.Home },
+            onBack = { currentScreen = previousScreen },
             onComicClick = { comic, allComics ->
                 comicsInFolder = allComics
                 selectedComic = comic
+                previousScreen = Screen.Library(screen.folder)   // ← recordar
                 currentScreen = Screen.Reader(comic)
             }
         )
@@ -184,19 +186,24 @@ fun MangaUniversalApp() {
         is Screen.Reader -> com.mangauniversal.app.ui.reader.ReaderScreen(
             comic = screen.comic,
             comicsList = comicsInFolder.ifEmpty { listOf(screen.comic) },
-            onBack = { currentScreen = Screen.Home },
+            onBack = {
+                // Vuelve al sitio de donde vinimos (historial, carpeta o explorador)
+                currentScreen = previousScreen
+            },
             onOpenComic = { newComic ->
                 selectedComic = newComic
                 comicsInFolder = listOf(newComic)
+                // Mantener el previousScreen (ya está configurado)
                 currentScreen = Screen.Reader(newComic)
             }
         )
 
         is Screen.History -> com.mangauniversal.app.ui.history.HistoryScreen(
-            onBack = { currentScreen = Screen.Home },
+            onBack = { currentScreen = previousScreen },
             onOpenComic = { comic, list ->
                 comicsInFolder = list
                 selectedComic = comic
+                previousScreen = Screen.History   // ← recordar que venimos del historial
                 currentScreen = Screen.Reader(comic)
             }
         )
