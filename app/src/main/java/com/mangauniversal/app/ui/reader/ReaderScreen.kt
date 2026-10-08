@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -35,7 +37,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +49,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.reader.PageExtractor
 import com.mangauniversal.app.data.settings.ReaderMode
@@ -83,6 +89,10 @@ fun ReaderScreen(
     var initialPage by remember { mutableIntStateOf(-1) }
     var pagesLoaded by remember { mutableStateOf(false) }
 
+    // Estado para el slider
+    var isSliding by remember { mutableStateOf(false) }
+    var sliderPage by remember { mutableIntStateOf(0) }
+
     val currentIndex = comicsList.indexOfFirst { it.id == comic.id }
     val nextComic = if (currentIndex >= 0 && currentIndex < comicsList.size - 1) {
         comicsList[currentIndex + 1]
@@ -105,8 +115,11 @@ fun ReaderScreen(
         }
     }
 
+    // Guardar historial (con globalScope para que no se cancele)
     LaunchedEffect(comic.id) {
-        prefs.addToHistory(comic.id, comic.title, comic.path)
+        globalScope.launch {
+            prefs.addToHistory(comic.id, comic.title, comic.path)
+        }
     }
 
     DisposableEffect(comic.id) {
@@ -230,6 +243,46 @@ fun ReaderScreen(
             }
         }
 
+        // ─────────── MINIATURA AL ARRASTRAR SLIDER ───────────
+        if (isSliding && pages != null && sliderPage in pages!!.indices) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(220.dp, 320.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xEE000000))
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(pages!![sliderPage])
+                        .memoryCacheKey(pages!![sliderPage].absolutePath)
+                        .diskCacheKey(pages!![sliderPage].absolutePath)
+                        .crossfade(false)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Número de página encima
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .background(Color(0xCC000000), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "Página ${sliderPage + 1}",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+
         AnimatedVisibility(
             visible = controlsVisible,
             enter = fadeIn(),
@@ -310,6 +363,7 @@ fun ReaderScreen(
             }
         }
 
+        // ─────────── BARRA INFERIOR CON SLIDER ───────────
         if (pages != null && controlsVisible) {
             val totalPages = pages!!.size
             Row(
@@ -321,10 +375,16 @@ fun ReaderScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Slider(
-                    value = currentPage.toFloat(),
+                    value = if (isSliding) sliderPage.toFloat() else currentPage.toFloat(),
                     onValueChange = { newValue ->
-                        currentPage = newValue.toInt()
-                        pendingPage = newValue.toInt()
+                        isSliding = true
+                        sliderPage = newValue.toInt()
+                    },
+                    onValueChangeFinished = {
+                        // Al soltar → saltar a la página elegida
+                        currentPage = sliderPage
+                        pendingPage = sliderPage
+                        isSliding = false
                     },
                     valueRange = 0f..(totalPages - 1).toFloat().coerceAtLeast(1f),
                     modifier = Modifier.weight(1f).height(24.dp),
@@ -336,7 +396,7 @@ fun ReaderScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "${currentPage + 1} / $totalPages",
+                    text = if (isSliding) "${sliderPage + 1} / $totalPages" else "${currentPage + 1} / $totalPages",
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
