@@ -27,7 +27,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -52,9 +51,9 @@ fun ReaderVertical(
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
-    val screenWidthDp = configuration.screenWidthDp.dp
+    val screenWidthDp = configuration.screenWidthDp
 
-    // Zoom local: 0.5x a 1.5x
+    // Zoom local: 0.5x a 1.0x (sin scroll horizontal)
     var zoom by remember { mutableFloatStateOf(1f) }
     var lastNotifiedPage by remember { mutableIntStateOf(-1) }
 
@@ -92,7 +91,8 @@ fun ReaderVertical(
                             if (pressed.size >= 2) {
                                 val zoomChange = event.calculateZoom()
                                 if (zoomChange != 1f) {
-                                    val newZoom = (zoom * zoomChange).coerceIn(0.5f, 1.5f)
+                                    // Zoom solo entre 0.5x y 1.0x (sin salirse de pantalla)
+                                    val newZoom = (zoom * zoomChange).coerceIn(0.5f, 1.0f)
                                     zoom = newZoom
                                     event.changes.forEach { if (it.pressed) it.consume() }
                                 }
@@ -103,12 +103,14 @@ fun ReaderVertical(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             items(pages.size) { index ->
-                // Cada imagen se ajusta con graphicsLayer (sin re-decodificar)
+                // Ajustar el ANCHO de TODA la tira según el zoom.
+                // Cada imagen ocupa `zoom` fracción del ancho total.
+                val widthFraction = zoom.coerceIn(0.5f, 1.0f)
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .wrapContentHeight()
-                        .padding(vertical = 0.dp),
+                        .wrapContentHeight(),
                     contentAlignment = Alignment.Center
                 ) {
                     AsyncImage(
@@ -121,12 +123,8 @@ fun ReaderVertical(
                         contentDescription = null,
                         contentScale = ContentScale.FillWidth,
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .fillMaxWidth(widthFraction)
                             .wrapContentHeight()
-                            .graphicsLayer(
-                                scaleX = zoom,
-                                scaleY = zoom
-                            )
                             .clickable(onClick = onCenterTap)
                     )
                 }
