@@ -21,9 +21,19 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,12 +58,12 @@ import coil.compose.AsyncImage
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
 import com.mangauniversal.app.data.scanner.ComicScanner
-import com.mangauniversal.app.data.scanner.NaturalOrderComparator
 import com.mangauniversal.app.data.settings.ViewPreferences
 import com.mangauniversal.app.data.thumbnail.ThumbnailExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 @Composable
 fun LibraryScreen(
@@ -64,11 +75,15 @@ fun LibraryScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember { ViewPreferences(context) }
+    val thumbnailExtractor = remember { ThumbnailExtractor(context) }
 
     var comics by remember { mutableStateOf<List<Comic>?>(null) }
+    var subfolders by remember { mutableStateOf<List<File>>(emptyList()) }
+    var currentPath by remember(folderPath) { mutableStateOf(folderPath) }
     var isLoading by remember { mutableStateOf(true) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST_THUMB) }
     var searchQuery by remember { mutableStateOf("") }
+    var searchVisible by remember { mutableStateOf(false) }
     var sortAscending by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
@@ -76,160 +91,156 @@ fun LibraryScreen(
         if (saved != null) viewMode = saved
     }
 
-    LaunchedEffect(folderPath) {
+    LaunchedEffect(currentPath) {
         isLoading = true
-        comics = withContext(Dispatchers.IO) {
-            ComicScanner(context).scanFolder(folderPath)
+        withContext(Dispatchers.IO) {
+            val folder = File(currentPath)
+            subfolders = try {
+                folder.listFiles()
+                    ?.filter { it.isDirectory && !it.name.startsWith(".") && it.canRead() }
+                    ?.sortedBy { it.name.lowercase() }
+                    ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            comics = ComicScanner(context).scanFolder(currentPath)
         }
         isLoading = false
     }
 
-    // Lista filtrada por buscador y ordenada
     val displayedComics = remember(comics, searchQuery, sortAscending) {
         val base = comics ?: emptyList()
         val filtered = if (searchQuery.isBlank()) base
         else base.filter { it.title.contains(searchQuery, ignoreCase = true) }
-        val sorted = filtered.sortedWith(
-            compareBy(NaturalOrderComparator()) { it.title }
-        )
+        val sorted = filtered.sortedBy { it.title.lowercase() }
         if (sortAscending) sorted else sorted.reversed()
     }
+
+    val currentDir = remember(currentPath) { File(currentPath) }
+    val canGoUp = currentDir.parentFile != null && currentPath != folderPath
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0E0E0E))
-            .padding(12.dp)
     ) {
-        // Cabecera
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF1F3A4D))
+                .padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                onClick = onBack,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6B4EAA)),
-                modifier = Modifier.width(60.dp)
-            ) {
-                Text("←", fontSize = 18.sp, color = Color.White)
+            IconButton(onClick = {
+                if (canGoUp) {
+                    currentPath = currentDir.parentFile!!.absolutePath
+                } else {
+                    onBack()
+                }
+            }) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
             }
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
                 Text(
-                    text = folderName,
+                    text = currentDir.name.ifEmpty { folderName },
                     color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = folderPath,
-                    color = Color.White.copy(alpha = 0.4f),
-                    fontSize = 9.sp,
+                    text = currentPath,
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+            IconButton(onClick = { searchVisible = !searchVisible }) {
+                Icon(Icons.Default.Search, contentDescription = "Buscar", tint = Color.White)
+            }
+            IconButton(onClick = { sortAscending = !sortAscending }) {
+                Icon(Icons.Default.Sort, contentDescription = "Orden", tint = Color.White)
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Buscador + botón de orden
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        if (searchVisible) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = {
-                    Text("Buscar cómic...", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                    Text("Buscar...", color = Color.White.copy(alpha = 0.4f), fontSize = 13.sp)
                 },
-                modifier = Modifier.weight(1f).height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 13.sp)
+                textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = Color.White)
+                        }
+                    }
+                }
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(
-                onClick = { sortAscending = !sortAscending },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
-                modifier = Modifier.width(50.dp),
-                contentPadding = PaddingValues(0.dp)
-            ) {
-                Text(
-                    text = if (sortAscending) "A↓" else "Z↑",
-                    fontSize = 12.sp,
-                    color = Color.White
-                )
-            }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Barra de vista
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF1A1A1A), RoundedCornerShape(6.dp))
-                .padding(6.dp),
+                .background(Color(0xFF16293A))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (comics != null && comics!!.isNotEmpty()) {
-                Text(
-                    text = "✅ ${displayedComics.size}",
-                    color = Color(0xFFFF6B00),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            ViewButton(
-                text = "☰",
-                active = viewMode == ViewMode.LIST_THUMB,
+            Text(
+                text = "✅ ${displayedComics.size} cómics · ${subfolders.size} carpetas",
+                color = Color(0xFFFF6B00),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
                 onClick = {
                     viewMode = ViewMode.LIST_THUMB
                     scope.launch { prefs.saveViewMode(ViewMode.LIST_THUMB) }
-                }
-            )
-            ViewButton(
-                text = "≡",
-                active = viewMode == ViewMode.LIST_COMPACT,
-                onClick = {
-                    viewMode = ViewMode.LIST_COMPACT
-                    scope.launch { prefs.saveViewMode(ViewMode.LIST_COMPACT) }
-                }
-            )
-            ViewButton(
-                text = "⊞",
-                active = viewMode == ViewMode.GRID_2,
+                },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.ViewList,
+                    contentDescription = "Lista",
+                    tint = if (viewMode == ViewMode.LIST_THUMB) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.5f)
+                )
+            }
+            IconButton(
                 onClick = {
                     viewMode = ViewMode.GRID_2
                     scope.launch { prefs.saveViewMode(ViewMode.GRID_2) }
-                }
-            )
-            ViewButton(
-                text = "⊞⊞",
-                active = viewMode == ViewMode.GRID_4,
+                },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.GridView,
+                    contentDescription = "Cuadrícula",
+                    tint = if (viewMode == ViewMode.GRID_2) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.5f)
+                )
+            }
+            IconButton(
                 onClick = {
-                    viewMode = ViewMode.GRID_4
-                    scope.launch { prefs.saveViewMode(ViewMode.GRID_4) }
-                }
-            )
-            ViewButton(
-                text = "⊞⊞⊞",
-                active = viewMode == ViewMode.GRID_6,
-                onClick = {
-                    viewMode = ViewMode.GRID_6
-                    scope.launch { prefs.saveViewMode(ViewMode.GRID_6) }
-                }
-            )
+                    viewMode = ViewMode.LIST_COMPACT
+                    scope.launch { prefs.saveViewMode(ViewMode.LIST_COMPACT) }
+                },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.List,
+                    contentDescription = "Compacto",
+                    tint = if (viewMode == ViewMode.LIST_COMPACT) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.5f)
+                )
+            }
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
 
         when {
             isLoading -> {
@@ -240,11 +251,11 @@ fun LibraryScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = Color(0xFFFF6B00))
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text("Escaneando carpeta...", color = Color.White, fontSize = 14.sp)
+                        Text("Escaneando...", color = Color.White, fontSize = 14.sp)
                     }
                 }
             }
-            comics == null || comics!!.isEmpty() -> {
+            (comics == null || comics!!.isEmpty()) && subfolders.isEmpty() -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -256,77 +267,88 @@ fun LibraryScreen(
                     )
                 }
             }
-            displayedComics.isEmpty() -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "No hay resultados para \"$searchQuery\"",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 14.sp
-                    )
-                }
-            }
             else -> {
                 when (viewMode) {
                     ViewMode.LIST_THUMB -> LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(displayedComics, key = { it.id }) { comic ->
-                            Box(modifier = Modifier.clickable { onComicClick(comic, displayedComics) }) {
-                                ComicRowWithThumbnail(comic)
+                        item { Spacer(Modifier.height(4.dp)) }
+                        if (subfolders.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Carpetas",
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 2.dp)
+                                )
+                            }
+                            items(subfolders, key = { it.absolutePath }) { dir ->
+                                FolderRow(dir) { currentPath = dir.absolutePath }
                             }
                         }
+                        if (displayedComics.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Cómics",
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
+                                )
+                            }
+                            items(displayedComics, key = { it.id }) { comic ->
+                                Row(Modifier.clickable { onComicClick(comic, displayedComics) }) {
+                                    ComicRowWithThumbnail(comic, thumbnailExtractor)
+                                }
+                            }
+                        }
+                        item { Spacer(Modifier.height(20.dp)) }
                     }
 
                     ViewMode.LIST_COMPACT -> LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
+                        item { Spacer(Modifier.height(4.dp)) }
+                        if (subfolders.isNotEmpty()) {
+                            items(subfolders, key = { it.absolutePath }) { dir ->
+                                FolderRow(dir) { currentPath = dir.absolutePath }
+                            }
+                        }
                         items(displayedComics, key = { it.id }) { comic ->
-                            Box(modifier = Modifier.clickable { onComicClick(comic, displayedComics) }) {
+                            Row(Modifier.clickable { onComicClick(comic, displayedComics) }) {
                                 ComicRowCompact(comic)
                             }
                         }
+                        item { Spacer(Modifier.height(20.dp)) }
                     }
 
                     ViewMode.GRID_2 -> LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(displayedComics, key = { it.id }) { comic ->
-                            Box(modifier = Modifier.clickable { onComicClick(comic, displayedComics) }) {
-                                ComicGridItem(comic)
+                        item { Spacer(Modifier.height(4.dp)) }
+                        if (subfolders.isNotEmpty()) {
+                            items(subfolders, key = { it.absolutePath }) { dir ->
+                                FolderGridItem(dir) { currentPath = dir.absolutePath }
                             }
                         }
-                    }
-
-                    ViewMode.GRID_4 -> LazyVerticalGrid(
-                        columns = GridCells.Fixed(4),
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
                         items(displayedComics, key = { it.id }) { comic ->
-                            Box(modifier = Modifier.clickable { onComicClick(comic, displayedComics) }) {
-                                ComicGridItem(comic)
+                            Row(Modifier.clickable { onComicClick(comic, displayedComics) }) {
+                                ComicGridItem(comic, thumbnailExtractor)
                             }
                         }
+                        item { Spacer(Modifier.height(20.dp)) }
                     }
 
-                    ViewMode.GRID_6 -> LazyVerticalGrid(
-                        columns = GridCells.Fixed(6),
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    else -> LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
                     ) {
                         items(displayedComics, key = { it.id }) { comic ->
-                            Box(modifier = Modifier.clickable { onComicClick(comic, displayedComics) }) {
-                                ComicGridSmall(comic)
+                            Row(Modifier.clickable { onComicClick(comic, displayedComics) }) {
+                                ComicRowWithThumbnail(comic, thumbnailExtractor)
                             }
                         }
                     }
@@ -337,23 +359,75 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun ViewButton(text: String, active: Boolean, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (active) Color(0xFFFF6B00) else Color(0xFF333333)
-        ),
+private fun FolderRow(dir: File, onClick: () -> Unit) {
+    val count = remember(dir.absolutePath) {
+        try { dir.listFiles()?.size ?: 0 } catch (e: Exception) { 0 }
+    }
+    Row(
         modifier = Modifier
-            .width(44.dp)
-            .padding(horizontal = 1.dp),
-        contentPadding = PaddingValues(0.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF1A1A1A))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text, fontSize = 12.sp, color = Color.White)
+        Text("📁", fontSize = 22.sp, modifier = Modifier.width(32.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = dir.name,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (count > 0) {
+                Text(
+                    text = "$count elementos",
+                    color = Color.White.copy(alpha = 0.45f),
+                    fontSize = 11.sp
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun ComicRowWithThumbnail(comic: Comic) {
+private fun FolderGridItem(dir: File, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF1A1A1A))
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.75f)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0xFF2A2A2A)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("📁", fontSize = 48.sp)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = dir.name,
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun ComicRowWithThumbnail(comic: Comic, extractor: ThumbnailExtractor) {
     val context = LocalContext.current
     var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
 
@@ -361,20 +435,21 @@ private fun ComicRowWithThumbnail(comic: Comic) {
         thumbPath = if (comic.type == ComicType.FOLDER && comic.coverPath != null) {
             comic.coverPath
         } else {
-            ThumbnailExtractor(context).getThumbnail(comic)?.absolutePath
+            extractor.getThumbnail(comic)?.absolutePath
         }
     }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF1A1A1A), RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF1A1A1A))
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(60.dp, 80.dp)
+                .size(56.dp, 76.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Color(0xFF2A2A2A)),
             contentAlignment = Alignment.Center
@@ -390,16 +465,17 @@ private fun ComicRowWithThumbnail(comic: Comic) {
                 Text(text = iconFor(comic.type), fontSize = 28.sp)
             }
         }
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = comic.title,
                 color = Color.White,
                 fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = "${comic.type} · ${formatSize(comic.sizeBytes)}",
                 color = Color.White.copy(alpha = 0.5f),
@@ -414,123 +490,10 @@ private fun ComicRowCompact(comic: Comic) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 10.dp),
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFF1A1A1A))
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = iconFor(comic.type), fontSize = 18.sp)
-        Spacer(modifier = Modifier.width(10.dp))
-        Text(
-            text = comic.title,
-            color = Color.White,
-            fontSize = 14.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun ComicGridItem(comic: Comic) {
-    val context = LocalContext.current
-    var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(comic.id) {
-        thumbPath = if (comic.type == ComicType.FOLDER && comic.coverPath != null) {
-            comic.coverPath
-        } else {
-            ThumbnailExtractor(context).getThumbnail(comic)?.absolutePath
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFF1A1A1A), RoundedCornerShape(6.dp))
-            .padding(6.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(0.75f)
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color(0xFF2A2A2A)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (thumbPath != null) {
-                AsyncImage(
-                    model = thumbPath,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Text(text = iconFor(comic.type), fontSize = 40.sp)
-            }
-        }
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = comic.title,
-            color = Color.White,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            lineHeight = 13.sp
-        )
-    }
-}
-
-@Composable
-private fun ComicGridSmall(comic: Comic) {
-    val context = LocalContext.current
-    var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(comic.id) {
-        thumbPath = if (comic.type == ComicType.FOLDER && comic.coverPath != null) {
-            comic.coverPath
-        } else {
-            ThumbnailExtractor(context).getThumbnail(comic)?.absolutePath
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(0.75f)
-            .clip(RoundedCornerShape(4.dp))
-            .background(Color(0xFF2A2A2A)),
-        contentAlignment = Alignment.Center
-    ) {
-        if (thumbPath != null) {
-            AsyncImage(
-                model = thumbPath,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            Text(text = iconFor(comic.type), fontSize = 24.sp)
-        }
-    }
-}
-
-private fun iconFor(type: ComicType): String = when (type) {
-    ComicType.CBZ -> "📕"
-    ComicType.CBR -> "📕"
-    ComicType.ZIP -> "📦"
-    ComicType.RAR -> "📦"
-    ComicType.SEVEN_ZIP -> "📦"
-    ComicType.PDF -> "📄"
-    ComicType.FOLDER -> "📁"
-    else -> "❓"
-}
-
-private fun formatSize(bytes: Long): String {
-    return when {
-        bytes < 1024 -> "$bytes B"
-        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-        bytes < 1024L * 1024L * 1024L -> "${bytes / (1024 * 1024)} MB"
-        else -> "${bytes / (1024L * 1024L * 1024L)} GB"
-    }
-}
+        Text(text = iconFor(comic.type), fontSize = 18.sp, modifier = Modifier.width(28.dp))
+        Spacer(Modifier.width(10.dp)
