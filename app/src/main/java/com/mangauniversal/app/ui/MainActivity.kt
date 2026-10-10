@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -195,6 +196,10 @@ fun MangaUniversalApp() {
                 previousScreen = Screen.Home
                 currentScreen = Screen.History
             },
+            onOpenSettings = {
+                previousScreen = Screen.Home
+                currentScreen = Screen.Settings
+            },
             onContinueReading = { comic ->
                 comicsInFolder = listOf(comic)
                 selectedComic = comic
@@ -276,6 +281,10 @@ fun MangaUniversalApp() {
                 currentScreen = Screen.Reader(comic)
             }
         )
+
+        is Screen.Settings -> SettingsScreen(
+            onBack = { currentScreen = previousScreen }
+        )
     }
 }
 
@@ -330,6 +339,7 @@ fun PermissionDialog(
 sealed class Screen {
     object Home : Screen()
     object History : Screen()
+    object Settings : Screen()
     data class Directory(val path: String) : Screen()
     data class Library(val folder: FolderConfig) : Screen()
     data class Reader(val comic: Comic) : Screen()
@@ -369,6 +379,7 @@ fun MainTabsScreen(
     onOpenFavoriteFolder: (String) -> Unit,
     onAddFolder: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenSettings: () -> Unit,
     onContinueReading: (Comic) -> Unit,
     onOpenComicFromTab: (Comic) -> Unit,
     onOpenBookmark: (Comic, Int) -> Unit
@@ -376,7 +387,8 @@ fun MainTabsScreen(
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0E0E0E))) {
         TopBar(
             currentTab = currentTab,
-            onTabChange = onTabChange
+            onTabChange = onTabChange,
+            onOpenSettings = onOpenSettings
         )
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -405,7 +417,8 @@ fun MainTabsScreen(
 
         BottomBar(
             currentTab = currentTab,
-            onTabChange = onTabChange
+            onTabChange = onTabChange,
+            onOpenSettings = onOpenSettings
         )
     }
 }
@@ -413,7 +426,8 @@ fun MainTabsScreen(
 @Composable
 fun TopBar(
     currentTab: AppTab,
-    onTabChange: (AppTab) -> Unit
+    onTabChange: (AppTab) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     Column {
         Row(
@@ -435,6 +449,9 @@ fun TopBar(
             )
             IconButton(onClick = { }) {
                 Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.White)
+            }
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Default.Settings, contentDescription = "Ajustes", tint = Color.White)
             }
             IconButton(onClick = { }) {
                 Icon(Icons.Default.MoreVert, contentDescription = "Más", tint = Color.White)
@@ -484,7 +501,8 @@ private fun TabItem(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 fun BottomBar(
     currentTab: AppTab,
-    onTabChange: (AppTab) -> Unit
+    onTabChange: (AppTab) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -496,7 +514,7 @@ fun BottomBar(
         BottomBarItem(Icons.Default.Edit, "Edit") { }
         BottomBarItem(Icons.Default.History, "Recent") { onTabChange(AppTab.History) }
         BottomBarItem(Icons.Default.GridView, "View") { }
-        BottomBarItem(Icons.Default.Sort, "Sort") { }
+        BottomBarItem(Icons.Default.Settings, "Settings") { onOpenSettings() }
     }
 }
 
@@ -539,17 +557,4 @@ fun DirectoryTab(
         Spacer(Modifier.height(8.dp))
         Text(
             "Explora tus carpetas de cómics",
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 13.sp
-        )
-        Spacer(Modifier.height(24.dp))
-        Button(
-            onClick = {
-                onOpenStorage(Environment.getExternalStorageDirectory().absolutePath)
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))
-        ) {
-            Text("Abrir almacenamiento", color = Color.White)
-        }
-    }
-}
+            color = Col
