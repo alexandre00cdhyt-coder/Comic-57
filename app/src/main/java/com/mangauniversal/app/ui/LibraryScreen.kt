@@ -499,4 +499,78 @@ private fun ComicRowCompact(comic: Comic) {
             fontSize = 13.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-  
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun ComicGridItem(comic: Comic, extractor: ThumbnailExtractor) {
+    var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(comic.id) {
+        thumbPath = if (comic.type == ComicType.FOLDER && comic.coverPath != null) {
+            comic.coverPath
+        } else {
+            extractor.getThumbnail(comic)?.absolutePath
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF1A1A1A))
+            .padding(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.75f)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0xFF2A2A2A)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (thumbPath != null) {
+                AsyncImage(
+                    model = thumbPath,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(text = iconFor(comic.type), fontSize = 40.sp)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = comic.title,
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 13.sp
+        )
+    }
+}
+
+private fun iconFor(type: ComicType): String = when (type) {
+    ComicType.CBZ -> "📕"
+    ComicType.CBR -> "📕"
+    ComicType.ZIP -> "📦"
+    ComicType.RAR -> "📦"
+    ComicType.SEVEN_ZIP -> "📦"
+    ComicType.PDF -> "📄"
+    ComicType.FOLDER -> "📁"
+    else -> "❓"
+}
+
+private fun formatSize(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024L * 1024L * 1024L -> "${bytes / (1024 * 1024)} MB"
+        else -> "${bytes / (1024L * 1024L * 1024L)} GB"
+    }
+}
