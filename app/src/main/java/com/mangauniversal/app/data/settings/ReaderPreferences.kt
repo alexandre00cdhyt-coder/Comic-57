@@ -35,8 +35,6 @@ class ReaderPreferences(private val context: Context) {
         private const val FIELD_SEP = "###"
     }
 
-    // ─────────── MODO DE LECTURA ───────────
-
     suspend fun getMode(): ReaderMode {
         return try {
             val prefs = context.readerDataStore.data.first()
@@ -56,8 +54,6 @@ class ReaderPreferences(private val context: Context) {
         }
     }
 
-    // ─────────── ZOOM VERTICAL ───────────
-
     suspend fun getVerticalZoom(): Float {
         return try {
             val prefs = context.readerDataStore.data.first()
@@ -76,8 +72,6 @@ class ReaderPreferences(private val context: Context) {
         } catch (e: Exception) {
         }
     }
-
-    // ─────────── PROGRESO ───────────
 
     suspend fun saveProgress(comicId: String, page: Int) {
         try {
@@ -101,6 +95,16 @@ class ReaderPreferences(private val context: Context) {
         }
     }
 
+    suspend fun getAllProgress(): Map<String, Int> {
+        return try {
+            val prefs = context.readerDataStore.data.first()
+            val raw = prefs[KEY_PROGRESS_ALL] ?: return emptyMap()
+            decodeProgress(raw)
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
     private fun encodeProgress(map: Map<String, Int>): String {
         return map.entries.joinToString(ENTRY_SEP) { (k, v) ->
             "$k$FIELD_SEP$v"
@@ -118,18 +122,14 @@ class ReaderPreferences(private val context: Context) {
         }.toMap()
     }
 
-    // ─────────── HISTORIAL ───────────
-
     suspend fun addToHistory(comicId: String, comicTitle: String, comicPath: String) {
         try {
             context.readerDataStore.edit { prefs ->
                 val raw = prefs[KEY_HISTORY_ALL] ?: ""
                 val entries = decodeHistory(raw).toMutableList()
 
-                // Quitar el cómic si ya existe
                 entries.removeAll { it.comicId == comicId }
 
-                // Añadir al principio con timestamp actual
                 entries.add(
                     0,
                     HistoryEntry(
@@ -140,7 +140,6 @@ class ReaderPreferences(private val context: Context) {
                     )
                 )
 
-                // Guardar solo los últimos 200
                 val limited = entries.take(200)
                 prefs[KEY_HISTORY_ALL] = encodeHistory(limited)
             }
