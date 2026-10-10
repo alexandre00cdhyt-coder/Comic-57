@@ -10,13 +10,39 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,6 +55,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -69,12 +96,20 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+sealed class AppTab {
+    object Storage : AppTab()
+    object Directory : AppTab()
+    object History : AppTab()
+    object Bookmark : AppTab()
+}
+
 @Composable
 fun MangaUniversalApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var hasPermission by remember { mutableStateOf(checkStoragePermission()) }
+    var currentTab by remember { mutableStateOf<AppTab>(AppTab.Storage) }
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
     var previousScreen by remember { mutableStateOf<Screen>(Screen.Home) }
 
@@ -98,9 +133,7 @@ fun MangaUniversalApp() {
         openAllFilesSettings(context.packageName, context)
     }
 
-    // Gesto de atrás global: en el home cierra la app
     BackHandler(enabled = currentScreen is Screen.Home) {
-        // Comportamiento por defecto: cerrar la app
     }
 
     if (showPermissionDialog) {
@@ -117,7 +150,7 @@ fun MangaUniversalApp() {
                     pendingPathAfterPermission = null
                     if (path != null) {
                         previousScreen = Screen.Home
-                        currentScreen = Screen.FileBrowser(path)
+                        currentScreen = Screen.Directory(path)
                     }
                 }
             },
@@ -129,8 +162,11 @@ fun MangaUniversalApp() {
     }
 
     when (val screen = currentScreen) {
-        is Screen.Home -> StorageExplorerScreen(
-            favoriteFolders = folders.filter { it.isFavorite }.map { it.path },
+        is Screen.Home -> MainTabsScreen(
+            currentTab = currentTab,
+            onTabChange = { currentTab = it },
+            folders = folders,
+            hasPermission = hasPermission,
             onOpenRecientes = {
                 previousScreen = Screen.Home
                 currentScreen = Screen.History
@@ -138,7 +174,7 @@ fun MangaUniversalApp() {
             onOpenStorage = { path ->
                 if (hasPermission) {
                     previousScreen = Screen.Home
-                    currentScreen = Screen.FileBrowser(path)
+                    currentScreen = Screen.Directory(path)
                 } else {
                     requestPermissionAndOpen(path)
                 }
@@ -154,7 +190,7 @@ fun MangaUniversalApp() {
                 if (hasPermission) {
                     val base = Environment.getExternalStorageDirectory().absolutePath
                     previousScreen = Screen.Home
-                    currentScreen = Screen.FileBrowser(base)
+                    currentScreen = Screen.Directory(base)
                 } else {
                     requestPermissionAndOpen(Environment.getExternalStorageDirectory().absolutePath)
                 }
@@ -162,17 +198,23 @@ fun MangaUniversalApp() {
             onOpenHistory = {
                 previousScreen = Screen.Home
                 currentScreen = Screen.History
+            },
+            onContinueReading = { comic ->
+                comicsInFolder = listOf(comic)
+                selectedComic = comic
+                previousScreen = Screen.Home
+                currentScreen = Screen.Reader(comic)
             }
         )
 
-        is Screen.FileBrowser -> FileBrowserScreen(
+        is Screen.Directory -> FileBrowserScreen(
             startPath = screen.path,
             favoriteFolders = folders.map { it.path },
             onBack = { currentScreen = previousScreen },
             onOpenComic = { comic ->
                 comicsInFolder = listOf(comic)
                 selectedComic = comic
-                previousScreen = Screen.FileBrowser(screen.path)
+                previousScreen = Screen.Directory(screen.path)
                 currentScreen = Screen.Reader(comic)
             },
             onToggleFavorite = { path ->
@@ -271,7 +313,7 @@ fun PermissionDialog(
 sealed class Screen {
     object Home : Screen()
     object History : Screen()
-    data class FileBrowser(val path: String) : Screen()
+    data class Directory(val path: String) : Screen()
     data class Library(val folder: FolderConfig) : Screen()
     data class Reader(val comic: Comic) : Screen()
 }
@@ -298,3 +340,210 @@ fun openAllFilesSettings(packageName: String, context: Context) {
         }
     }
 }
+
+@Composable
+fun MainTabsScreen(
+    currentTab: AppTab,
+    onTabChange: (AppTab) -> Unit,
+    folders: List<FolderConfig>,
+    hasPermission: Boolean,
+    onOpenRecientes: () -> Unit,
+    onOpenStorage: (String) -> Unit,
+    onOpenFavoriteFolder: (String) -> Unit,
+    onAddFolder: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onContinueReading: (Comic) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0E0E0E))) {
+        TopBar(
+            currentTab = currentTab,
+            onTabChange = onTabChange
+        )
+
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            when (currentTab) {
+                is AppTab.Storage -> StorageExplorerScreen(
+                    favoriteFolders = folders.filter { it.isFavorite }.map { it.path },
+                    onOpenRecientes = onOpenRecientes,
+                    onOpenStorage = onOpenStorage,
+                    onOpenFavoriteFolder = onOpenFavoriteFolder,
+                    onAddFolder = onAddFolder,
+                    onOpenHistory = onOpenHistory,
+                    onContinueReading = onContinueReading
+                )
+                is AppTab.Directory -> DirectoryTabPlaceholder(onOpenStorage = onOpenStorage)
+                is AppTab.History -> HistoryTabPlaceholder(onOpenHistory = onOpenHistory)
+                is AppTab.Bookmark -> BookmarkTabPlaceholder()
+            }
+        }
+
+        BottomBar(
+            currentTab = currentTab,
+            onTabChange = onTabChange
+        )
+    }
+}
+
+@Composable
+fun TopBar(
+    currentTab: AppTab,
+    onTabChange: (AppTab) -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF1F3A4D))
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { }) {
+                Icon(Icons.Default.Menu, contentDescription = "Menú", tint = Color.White)
+            }
+            Text(
+                text = "0",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = { }) {
+                Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.White)
+            }
+            IconButton(onClick = { }) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Más", tint = Color.White)
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF16293A))
+        ) {
+            TabItem("Storage", currentTab is AppTab.Storage) { onTabChange(AppTab.Storage) }
+            TabItem("Directory", currentTab is AppTab.Directory) { onTabChange(AppTab.Directory) }
+            TabItem("History", currentTab is AppTab.History) { onTabChange(AppTab.History) }
+            TabItem("Bookmark", currentTab is AppTab.Bookmark) { onTabChange(AppTab.Bookmark) }
+        }
+    }
+}
+
+@Composable
+private fun TabItem(label: String, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = label,
+            color = if (selected) Color.White else Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
+        )
+        if (selected) {
+            Spacer(Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .width(60.dp)
+                    .height(3.dp)
+                    .background(Color(0xFF4A90E2))
+            )
+        }
+    }
+}
+
+@Composable
+fun BottomBar(
+    currentTab: AppTab,
+    onTabChange: (AppTab) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF16293A))
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        BottomBarItem(Icons.Default.Edit, "Edit") { }
+        BottomBarItem(Icons.Default.History, "Recent") { onTabChange(AppTab.History) }
+        BottomBarItem(Icons.Default.GridView, "View") { }
+        BottomBarItem(Icons.Default.Sort, "Sort") { }
+    }
+}
+
+@Composable
+private fun BottomBarItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = Color.White, fontSize = 11.sp)
+    }
+}
+
+@Composable
+fun DirectoryTabPlaceholder(onOpenStorage: (String) -> Unit) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Default.Folder, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(64.dp))
+        Spacer(Modifier.height(16.dp))
+        Text("Directorio", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Text("Explora tus carpetas de cómics", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+        Spacer(Modifier.height(24.dp))
+        Button(
+            onClick = {
+                onOpenStorage(Environment.getExternalStorageDirectory().absolutePath)
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))
+        ) {
+            Text("Abrir almacenamiento", color = Color.White)
+        }
+    }
+}
+
+@Composable
+fun HistoryTabPlaceholder(onOpenHistory: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Default.History, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(64.dp))
+        Spacer(Modifier.height(16.dp))
+        Text("Historial", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Text("Cómics leídos recientemente", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+        Spacer(Modifier.height(24.dp))
+        Button(
+            onClick = onOpenHistory,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))
+        ) {
+            Text("Ver historial completo", color = Color.White)
+        }
+    }
+}
+
+@Composable
+fun BookmarkTabPlaceholder() {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color.White.copy(alp
