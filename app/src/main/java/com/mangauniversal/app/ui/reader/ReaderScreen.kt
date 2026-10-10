@@ -392,9 +392,8 @@ fun ReaderScreen(
                     modifier = Modifier
                         .size(22.dp)
                         .clickable { showBookmarkDialog = true }
-                        .padding(horizontal = 2.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = "<#",
                     fontSize = 15.sp,
@@ -492,4 +491,5 @@ fun ReaderScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                        
+                                Text(
+                                    t
