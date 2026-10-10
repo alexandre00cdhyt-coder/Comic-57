@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -53,8 +52,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
-fun HistoryScreen(
-    onBack: () -> Unit,
+fun HistoryScreenContent(
     onOpenComic: (Comic, List<Comic>) -> Unit
 ) {
     val context = LocalContext.current
@@ -108,100 +106,69 @@ fun HistoryScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF0E0E0E))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF1F3A4D))
-                .padding(horizontal = 4.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+    when {
+        history == null -> Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
-            }
-            Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
+            Text("Cargando historial...", color = Color.White, fontSize = 13.sp)
+        }
+
+        history!!.isEmpty() -> Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "📖 Historial",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    "📭 No hay cómics leídos todavía",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 14.sp
                 )
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "${history?.size ?: 0} cómics leídos",
-                    color = Color.White.copy(alpha = 0.5f),
+                    "Los cómics que abras aparecerán aquí",
+                    color = Color.White.copy(alpha = 0.4f),
                     fontSize = 11.sp
                 )
             }
         }
 
-        when {
-            history == null -> Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+        else -> {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("Cargando historial...", color = Color.White, fontSize = 13.sp)
-            }
-
-            history!!.isEmpty() -> Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "📭 No hay cómics leídos todavía",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Los cómics que abras aparecerán aquí",
-                        color = Color.White.copy(alpha = 0.4f),
-                        fontSize = 11.sp
+                item { Spacer(Modifier.height(6.dp)) }
+                items(history!!, key = { it.comicId }) { entry ->
+                    val progress = progressMap[entry.comicId] ?: 0
+                    HistoryRowItem(
+                        entry = entry,
+                        currentPage = progress,
+                        extractor = thumbnailExtractor,
+                        onClick = {
+                            val file = File(entry.path)
+                            val comic = Comic(
+                                id = entry.comicId,
+                                title = entry.title,
+                                path = entry.path,
+                                type = detectType(file.name),
+                                folder = file.parentFile?.name ?: "",
+                                lastModified = file.lastModified(),
+                                sizeBytes = file.length()
+                            )
+                            onOpenComic(comic, listOf(comic))
+                        },
+                        onMenu = { entryToDelete = entry }
                     )
                 }
-            }
-
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    item { Spacer(Modifier.height(6.dp)) }
-                    items(history!!, key = { it.comicId }) { entry ->
-                        val progress = progressMap[entry.comicId] ?: 0
-                        HistoryRow(
-                            entry = entry,
-                            currentPage = progress,
-                            extractor = thumbnailExtractor,
-                            onClick = {
-                                val file = File(entry.path)
-                                val comic = Comic(
-                                    id = entry.comicId,
-                                    title = entry.title,
-                                    path = entry.path,
-                                    type = detectType(file.name),
-                                    folder = file.parentFile?.name ?: "",
-                                    lastModified = file.lastModified(),
-                                    sizeBytes = file.length()
-                                )
-                                onOpenComic(comic, listOf(comic))
-                            },
-                            onMenu = { entryToDelete = entry }
-                        )
-                    }
-                    item { Spacer(Modifier.height(20.dp)) }
-                }
+                item { Spacer(Modifier.height(20.dp)) }
             }
         }
     }
 }
 
 @Composable
-private fun HistoryRow(
+private fun HistoryRowItem(
     entry: HistoryEntry,
     currentPage: Int,
     extractor: ThumbnailExtractor,
