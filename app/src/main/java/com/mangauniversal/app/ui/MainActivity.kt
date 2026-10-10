@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -85,7 +84,9 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color(0xFF0E0E0E)
                 ) {
-                    MangaUniversalApp()
+                    BackgroundWrapper {
+                        MangaUniversalApp()
+                    }
                 }
             }
         }
@@ -556,5 +557,17 @@ fun DirectoryTab(
         Text("Directorio", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Explora tus carpetas de cómics",
-            color = Col
+            "Explora tus carpetas de cómics",            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp
+        )
+        Spacer(Modifier.height(24.dp))
+        Button(
+            onClick = {
+                onOpenStorage(Environment.getExternalStorageDirectory().absolutePath)
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))
+        ) {
+            Text("Abrir almacenamiento", color = Color.White)
+        }
+    }
+}
