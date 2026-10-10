@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -44,10 +45,22 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = Color(0xFFFF6B00),
+                    onPrimary = Color.White,
+                    background = Color(0xFF0E0E0E),
+                    onBackground = Color.White,
+                    surface = Color(0xFF1A1A1A),
+                    onSurface = Color.White,
+                    surfaceVariant = Color(0xFF2A2A2A),
+                    onSurfaceVariant = Color.White.copy(alpha = 0.8f),
+                    outline = Color.White.copy(alpha = 0.3f)
+                )
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color.Black
+                    color = Color(0xFF0E0E0E)
                 ) {
                     MangaUniversalApp()
                 }
@@ -119,7 +132,6 @@ fun MangaUniversalApp() {
         is Screen.Home -> StorageExplorerScreen(
             favoriteFolders = folders.filter { it.isFavorite }.map { it.path },
             onOpenRecientes = {
-                // SIEMPRE va al historial completo (no al último cómic)
                 previousScreen = Screen.Home
                 currentScreen = Screen.History
             },
@@ -160,7 +172,7 @@ fun MangaUniversalApp() {
             onOpenComic = { comic ->
                 comicsInFolder = listOf(comic)
                 selectedComic = comic
-                previousScreen = Screen.FileBrowser(screen.path)   // ← recordar de dónde venimos
+                previousScreen = Screen.FileBrowser(screen.path)
                 currentScreen = Screen.Reader(comic)
             },
             onToggleFavorite = { path ->
@@ -178,7 +190,7 @@ fun MangaUniversalApp() {
             onComicClick = { comic, allComics ->
                 comicsInFolder = allComics
                 selectedComic = comic
-                previousScreen = Screen.Library(screen.folder)   // ← recordar
+                previousScreen = Screen.Library(screen.folder)
                 currentScreen = Screen.Reader(comic)
             }
         )
@@ -187,13 +199,11 @@ fun MangaUniversalApp() {
             comic = screen.comic,
             comicsList = comicsInFolder.ifEmpty { listOf(screen.comic) },
             onBack = {
-                // Vuelve al sitio de donde vinimos (historial, carpeta o explorador)
                 currentScreen = previousScreen
             },
             onOpenComic = { newComic ->
                 selectedComic = newComic
                 comicsInFolder = listOf(newComic)
-                // Mantener el previousScreen (ya está configurado)
                 currentScreen = Screen.Reader(newComic)
             }
         )
@@ -203,7 +213,7 @@ fun MangaUniversalApp() {
             onOpenComic = { comic, list ->
                 comicsInFolder = list
                 selectedComic = comic
-                previousScreen = Screen.History   // ← recordar que venimos del historial
+                previousScreen = Screen.History
                 currentScreen = Screen.Reader(comic)
             }
         )
