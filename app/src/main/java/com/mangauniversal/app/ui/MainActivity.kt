@@ -538,36 +538,32 @@ private fun BottomBarItem(
 }
 
 @Composable
-fun DirectoryTab(
-    hasPermission: Boolean,
-    onOpenStorage: (String) -> Unit
+private fun androidx.compose.foundation.layout.RowScope.TabItem(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        modifier = Modifier
+            .weight(1f)
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            Icons.Default.Folder,
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.5f),
-            modifier = Modifier.size(64.dp)
-        )
-        Spacer(Modifier.height(16.dp))
-        Text("Directorio", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
         Text(
-            "Explora tus carpetas de cómics",            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 13.sp
+            text = label,
+            color = if (selected) Color.White else Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
         )
-        Spacer(Modifier.height(24.dp))
-        Button(
-            onClick = {
-                onOpenStorage(Environment.getExternalStorageDirectory().absolutePath)
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))
-        ) {
-            Text("Abrir almacenamiento", color = Color.White)
+        if (selected) {
+            Spacer(Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .width(60.dp)
+                    .height(3.dp)
+                    .background(Color(0xFF4A90E2))
+            )
         }
     }
 }
