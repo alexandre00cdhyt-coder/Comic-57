@@ -16,6 +16,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,10 +53,10 @@ fun FileBrowserScreen(
 ) {
     var currentPath by remember(startPath) { mutableStateOf(startPath) }
     val currentDir = remember(currentPath) { File(currentPath) }
+    val context = LocalContext.current
 
     val isFavorite = favoriteFolders.contains(currentPath)
 
-    // Subcarpetas
     val subDirs = remember(currentPath) {
         try {
             currentDir.listFiles()
@@ -61,7 +68,6 @@ fun FileBrowserScreen(
         }
     }
 
-    // Cómics en la carpeta actual
     val comics = remember(currentPath) {
         try {
             currentDir.listFiles()
@@ -73,11 +79,11 @@ fun FileBrowserScreen(
         }
     }
 
-    // ¿Podemos subir un nivel más arriba?
     val parent = currentDir.parentFile
-    val canGoUp = parent != null && parent.absolutePath != "/" && parent.absolutePath.length >= "/storage".length
+    val canGoUp = parent != null &&
+            parent.absolutePath != "/" &&
+            parent.absolutePath.length >= "/storage".length
 
-    // Gesto de atrás: sube un nivel o sale
     BackHandler(enabled = true) {
         if (canGoUp) {
             currentPath = parent!!.absolutePath
@@ -86,30 +92,20 @@ fun FileBrowserScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Barra superior
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0E0E0E))) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0x99000000))
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .background(Color(0xFF1F3A4D))
+                .padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "←",
-                fontSize = 22.sp,
-                color = Color.White,
-                modifier = Modifier
-                    .clickable {
-                        if (canGoUp) {
-                            currentPath = parent!!.absolutePath
-                        } else {
-                            onBack()
-                        }
-                    }
-                    .padding(end = 12.dp)
-            )
-            Column(modifier = Modifier.weight(1f)) {
+            IconButton(onClick = {
+                if (canGoUp) currentPath = parent!!.absolutePath else onBack()
+            }) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
+            }
+            Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
                 Text(
                     text = currentDir.name.ifEmpty { currentPath },
                     color = Color.White,
@@ -126,17 +122,15 @@ fun FileBrowserScreen(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                text = if (isFavorite) "⭐" else "☆",
-                fontSize = 22.sp,
-                color = if (isFavorite) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.6f),
-                modifier = Modifier
-                    .clickable { onToggleFavorite(currentPath) }
-                    .padding(start = 12.dp)
-            )
+            IconButton(onClick = { onToggleFavorite(currentPath) }) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = "Favorito",
+                    tint = if (isFavorite) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.7f)
+                )
+            }
         }
 
-        // Contenido
         if (subDirs.isEmpty() && comics.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -153,25 +147,26 @@ fun FileBrowserScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                    .padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                item { Spacer(Modifier.height(8.dp)) }
+                item { Spacer(Modifier.height(6.dp)) }
 
-                // Subcarpetas primero
                 if (subDirs.isNotEmpty()) {
                     item {
                         Text(
-                            text = "Carpetas",
+                            text = "Carpetas (${subDirs.size})",
                             color = Color.White.copy(alpha = 0.5f),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+                            modifier = Modifier.padding(start = 6.dp, top = 4.dp, bottom = 2.dp)
                         )
                     }
                     items(subDirs, key = { it.absolutePath }) { dir ->
-                        FolderCard(
-                            dir = dir,
+                        BrowserRow(
+                            icon = "📁",
+                            title = dir.name,
+                            subtitle = "${dir.listFiles()?.size ?: 0} elementos",
                             isFavorite = favoriteFolders.contains(dir.absolutePath),
                             onOpen = { currentPath = dir.absolutePath },
                             onToggleFav = { onToggleFavorite(dir.absolutePath) }
@@ -179,7 +174,6 @@ fun FileBrowserScreen(
                     }
                 }
 
-                // Cómics después
                 if (comics.isNotEmpty()) {
                     item {
                         Spacer(Modifier.height(6.dp))
@@ -188,25 +182,28 @@ fun FileBrowserScreen(
                             color = Color.White.copy(alpha = 0.5f),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+                            modifier = Modifier.padding(start = 6.dp, top = 4.dp, bottom = 2.dp)
                         )
                     }
                     items(comics, key = { it.absolutePath }) { file ->
-                        ComicCard(
-                            file = file,
-                            onClick = {
-                                val type = detectType(file.name)
+                        BrowserRow(
+                            icon = iconFor(detectType(file.name)),
+                            title = file.nameWithoutExtension,
+                            subtitle = "${file.extension.uppercase()} · ${formatSize(file.length())}",
+                            isFavorite = false,
+                            onOpen = {
                                 val comic = Comic(
                                     id = file.absolutePath,
                                     title = file.nameWithoutExtension,
                                     path = file.absolutePath,
-                                    type = type,
+                                    type = detectType(file.name),
                                     folder = file.parentFile?.name ?: "",
                                     lastModified = file.lastModified(),
                                     sizeBytes = file.length()
                                 )
                                 onOpenComic(comic)
-                            }
+                            },
+                            onToggleFav = null
                         )
                     }
                 }
@@ -218,99 +215,51 @@ fun FileBrowserScreen(
 }
 
 @Composable
-private fun FolderCard(
-    dir: File,
+private fun BrowserRow(
+    icon: String,
+    title: String,
+    subtitle: String,
     isFavorite: Boolean,
     onOpen: () -> Unit,
-    onToggleFav: () -> Unit
+    onToggleFav: (() -> Unit)?
 ) {
-    val childCount = remember(dir.absolutePath) {
-        try { dir.listFiles()?.size ?: 0 } catch (e: Exception) { 0 }
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0x33FFFFFF))
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF1A1A1A))
             .clickable(onClick = onOpen)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = "📁", fontSize = 22.sp, modifier = Modifier.width(36.dp))
-        Spacer(Modifier.width(6.dp))
+        Text(text = icon, fontSize = 22.sp, modifier = Modifier.width(32.dp))
+        Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = dir.name,
+                text = title,
                 color = Color.White,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (childCount > 0) {
+            if (subtitle.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
                 Text(
-                    text = "$childCount elementos",
-                    color = Color.White.copy(alpha = 0.4f),
-                    fontSize = 10.sp
+                    text = subtitle,
+                    color = Color.White.copy(alpha = 0.45f),
+                    fontSize = 11.sp
                 )
             }
         }
-        Text(
-            text = if (isFavorite) "⭐" else "☆",
-            fontSize = 20.sp,
-            color = if (isFavorite) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.4f),
-            modifier = Modifier
-                .clickable(onClick = onToggleFav)
-                .padding(horizontal = 6.dp)
-        )
-        Text(
-            text = "›",
-            fontSize = 20.sp,
-            color = Color.White.copy(alpha = 0.3f)
-        )
-    }
-}
-
-@Composable
-private fun ComicCard(
-    file: File,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0x33FFFFFF))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = when (file.extension.lowercase()) {
-                "cbz", "cbr" -> "📕"
-                "zip", "rar", "7z" -> "📦"
-                "pdf" -> "📄"
-                else -> "❓"
-            },
-            fontSize = 22.sp,
-            modifier = Modifier.width(36.dp)
-        )
-        Spacer(Modifier.width(6.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = file.nameWithoutExtension,
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "${file.extension.uppercase()} · ${formatSize(file.length())}",
-                color = Color.White.copy(alpha = 0.4f),
-                fontSize = 10.sp
-            )
+        if (onToggleFav != null) {
+            IconButton(onClick = onToggleFav) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = "Favorito",
+                    tint = if (isFavorite) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.4f)
+                )
+            }
         }
     }
 }
@@ -325,6 +274,17 @@ private fun detectType(fileName: String): ComicType {
         "pdf" -> ComicType.PDF
         else -> ComicType.UNKNOWN
     }
+}
+
+private fun iconFor(type: ComicType): String = when (type) {
+    ComicType.CBZ -> "📕"
+    ComicType.CBR -> "📕"
+    ComicType.ZIP -> "📦"
+    ComicType.RAR -> "📦"
+    ComicType.SEVEN_ZIP -> "📦"
+    ComicType.PDF -> "📄"
+    ComicType.FOLDER -> "📁"
+    else -> "❓"
 }
 
 private fun formatSize(bytes: Long): String {
