@@ -24,19 +24,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -65,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import com.mangauniversal.app.data.folder.FolderConfig
 import com.mangauniversal.app.data.folder.FolderManager
 import com.mangauniversal.app.data.model.Comic
+import com.mangauniversal.app.ui.history.HistoryScreenContent
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -200,6 +196,12 @@ fun MangaUniversalApp() {
                 currentScreen = Screen.History
             },
             onContinueReading = { comic ->
+                comicsInFolder = listOf(comic)
+                selectedComic = comic
+                previousScreen = Screen.Home
+                currentScreen = Screen.Reader(comic)
+            },
+            onOpenComicFromTab = { comic ->
                 comicsInFolder = listOf(comic)
                 selectedComic = comic
                 previousScreen = Screen.Home
@@ -352,7 +354,8 @@ fun MainTabsScreen(
     onOpenFavoriteFolder: (String) -> Unit,
     onAddFolder: () -> Unit,
     onOpenHistory: () -> Unit,
-    onContinueReading: (Comic) -> Unit
+    onContinueReading: (Comic) -> Unit,
+    onOpenComicFromTab: (Comic) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0E0E0E))) {
         TopBar(
@@ -371,9 +374,14 @@ fun MainTabsScreen(
                     onOpenHistory = onOpenHistory,
                     onContinueReading = onContinueReading
                 )
-                is AppTab.Directory -> DirectoryTabPlaceholder(onOpenStorage = onOpenStorage)
-                is AppTab.History -> HistoryTabPlaceholder(onOpenHistory = onOpenHistory)
-                is AppTab.Bookmark -> BookmarkTabPlaceholder()
+                is AppTab.Directory -> DirectoryTab(
+                    hasPermission = hasPermission,
+                    onOpenStorage = onOpenStorage
+                )
+                is AppTab.History -> HistoryScreenContent(
+                    onOpenComic = { comic, _ -> onOpenComicFromTab(comic) }
+                )
+                is AppTab.Bookmark -> BookmarkTab()
             }
         }
 
@@ -493,18 +501,29 @@ private fun BottomBarItem(
 }
 
 @Composable
-fun DirectoryTabPlaceholder(onOpenStorage: (String) -> Unit) {
-    val context = LocalContext.current
+fun DirectoryTab(
+    hasPermission: Boolean,
+    onOpenStorage: (String) -> Unit
+) {
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Default.Folder, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(64.dp))
+        Icon(
+            Icons.Default.Folder,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.5f),
+            modifier = Modifier.size(64.dp)
+        )
         Spacer(Modifier.height(16.dp))
         Text("Directorio", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        Text("Explora tus carpetas de cómics", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+        Text(
+            "Explora tus carpetas de cómics",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp
+        )
         Spacer(Modifier.height(24.dp))
         Button(
             onClick = {
@@ -518,32 +537,25 @@ fun DirectoryTabPlaceholder(onOpenStorage: (String) -> Unit) {
 }
 
 @Composable
-fun HistoryTabPlaceholder(onOpenHistory: () -> Unit) {
+fun BookmarkTab() {
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Default.History, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(64.dp))
+        Icon(
+            Icons.Default.Bookmark,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.5f),
+            modifier = Modifier.size(64.dp)
+        )
         Spacer(Modifier.height(16.dp))
-        Text("Historial", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("Marcadores", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        Text("Cómics leídos recientemente", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
-        Spacer(Modifier.height(24.dp))
-        Button(
-            onClick = onOpenHistory,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))
-        ) {
-            Text("Ver historial completo", color = Color.White)
-        }
+        Text(
+            "Próximamente",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp
+        )
     }
 }
-
-@Composable
-fun BookmarkTabPlaceholder() {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color.White.copy(alp
