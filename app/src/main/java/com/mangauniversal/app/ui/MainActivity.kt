@@ -538,7 +538,7 @@ private fun BottomBarItem(
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.TabItem(
+private fun androidx.compose.foundation.layout.RowScope.TabItem(label: String, selected: Boolean, onClick: () -> Unit) {
     label: String,
     selected: Boolean,
     onClick: () -> Unit
