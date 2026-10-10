@@ -492,4 +492,57 @@ fun ReaderScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    t
+                                                                        text = when (mode) {
+                                        ReaderMode.RIGHT -> (if (readerMode == mode) "✓ " else "   ") + "→ Derecha"
+                                        ReaderMode.LEFT -> (if (readerMode == mode) "✓ " else "   ") + "← Izquierda"
+                                        ReaderMode.VERTICAL -> (if (readerMode == mode) "✓ " else "   ") + "↓ Vertical"
+                                    },
+                                    color = if (readerMode == mode) Color(0xFFFF6B00) else Color.White,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showModeDialog = false }) {
+                        Text("Cerrar", color = Color.White, fontSize = 13.sp)
+                    }
+                },
+                containerColor = Color(0xFF1A1A1A)
+            )
+        }
+
+        if (showFitDialog) {
+            AlertDialog(
+                onDismissRequest = { showFitDialog = false },
+                title = { Text("Ajuste de imagen", color = Color.White, fontSize = 15.sp) },
+                text = {
+                    Column {
+                        ImageFitMode.values().forEach { mode ->
+                            TextButton(
+                                onClick = {
+                                    fitMode = mode
+                                    showFitDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = (if (fitMode == mode) "✓ " else "   ") + mode.label,
+                                    color = if (fitMode == mode) Color(0xFFFF6B00) else Color.White,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showFitDialog = false }) {
+                        Text("Cerrar", color = Color.White, fontSize = 13.sp)
+                    }
+                },
+                containerColor = Color(0xFF1A1A1A)
+            )
+        }
+    }
+}
