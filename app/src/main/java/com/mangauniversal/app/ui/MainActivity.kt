@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
@@ -112,6 +111,7 @@ fun MangaUniversalApp() {
     var folders by remember { mutableStateOf<List<FolderConfig>>(emptyList()) }
     var selectedComic by remember { mutableStateOf<Comic?>(null) }
     var comicsInFolder by remember { mutableStateOf<List<Comic>>(emptyList()) }
+    var pendingPage by remember { mutableStateOf(-1) }
 
     var showPermissionDialog by remember { mutableStateOf(false) }
     var pendingPathAfterPermission by remember { mutableStateOf<String?>(null) }
@@ -198,12 +198,21 @@ fun MangaUniversalApp() {
             onContinueReading = { comic ->
                 comicsInFolder = listOf(comic)
                 selectedComic = comic
+                pendingPage = -1
                 previousScreen = Screen.Home
                 currentScreen = Screen.Reader(comic)
             },
             onOpenComicFromTab = { comic ->
                 comicsInFolder = listOf(comic)
                 selectedComic = comic
+                pendingPage = -1
+                previousScreen = Screen.Home
+                currentScreen = Screen.Reader(comic)
+            },
+            onOpenBookmark = { comic, page ->
+                comicsInFolder = listOf(comic)
+                selectedComic = comic
+                pendingPage = page
                 previousScreen = Screen.Home
                 currentScreen = Screen.Reader(comic)
             }
@@ -216,6 +225,7 @@ fun MangaUniversalApp() {
             onOpenComic = { comic ->
                 comicsInFolder = listOf(comic)
                 selectedComic = comic
+                pendingPage = -1
                 previousScreen = Screen.Directory(screen.path)
                 currentScreen = Screen.Reader(comic)
             },
@@ -234,6 +244,7 @@ fun MangaUniversalApp() {
             onComicClick = { comic, allComics ->
                 comicsInFolder = allComics
                 selectedComic = comic
+                pendingPage = -1
                 previousScreen = Screen.Library(screen.folder)
                 currentScreen = Screen.Reader(comic)
             }
@@ -242,12 +253,15 @@ fun MangaUniversalApp() {
         is Screen.Reader -> com.mangauniversal.app.ui.reader.ReaderScreen(
             comic = screen.comic,
             comicsList = comicsInFolder.ifEmpty { listOf(screen.comic) },
+            initialPageOverride = pendingPage,
             onBack = {
+                pendingPage = -1
                 currentScreen = previousScreen
             },
             onOpenComic = { newComic ->
                 selectedComic = newComic
                 comicsInFolder = listOf(newComic)
+                pendingPage = -1
                 currentScreen = Screen.Reader(newComic)
             }
         )
@@ -257,6 +271,7 @@ fun MangaUniversalApp() {
             onOpenComic = { comic, list ->
                 comicsInFolder = list
                 selectedComic = comic
+                pendingPage = -1
                 previousScreen = Screen.History
                 currentScreen = Screen.Reader(comic)
             }
@@ -355,7 +370,8 @@ fun MainTabsScreen(
     onAddFolder: () -> Unit,
     onOpenHistory: () -> Unit,
     onContinueReading: (Comic) -> Unit,
-    onOpenComicFromTab: (Comic) -> Unit
+    onOpenComicFromTab: (Comic) -> Unit,
+    onOpenBookmark: (Comic, Int) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0E0E0E))) {
         TopBar(
@@ -381,7 +397,9 @@ fun MainTabsScreen(
                 is AppTab.History -> HistoryScreenContent(
                     onOpenComic = { comic, _ -> onOpenComicFromTab(comic) }
                 )
-                is AppTab.Bookmark -> BookmarkTab()
+                is AppTab.Bookmark -> BookmarkScreen(
+                    onOpenBookmark = onOpenBookmark
+                )
             }
         }
 
@@ -533,29 +551,5 @@ fun DirectoryTab(
         ) {
             Text("Abrir almacenamiento", color = Color.White)
         }
-    }
-}
-
-@Composable
-fun BookmarkTab() {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            Icons.Default.Bookmark,
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.5f),
-            modifier = Modifier.size(64.dp)
-        )
-        Spacer(Modifier.height(16.dp))
-        Text("Marcadores", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Próximamente",
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 13.sp
-        )
     }
 }
