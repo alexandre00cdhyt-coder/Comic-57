@@ -469,7 +469,7 @@ private fun ThemeSelector(
 }
 
 @Composable
-private fun ThemeButton(
+private fun androidx.compose.foundation.layout.RowScope.ThemeButton(
     label: String,
     value: String,
     currentTheme: String,
