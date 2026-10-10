@@ -58,31 +58,26 @@ fun HistoryScreen(
     var pageCountMap by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var entryToDelete by remember { mutableStateOf<HistoryEntry?>(null) }
 
-    // Cargar historial + progreso
     suspend fun loadHistory() {
         val h = withContext(Dispatchers.IO) { prefs.getHistory() }
         history = h
 
-        val progress = mutableMapOf<String, Int>()
+        val progress = withContext(Dispatchers.IO) { prefs.getAllProgress() }
+        progressMap = progress
+
         val pages = mutableMapOf<String, Int>()
-
         for (entry in h) {
-            val p = withContext(Dispatchers.IO) { prefs.getProgress(entry.comicId) }
-            progress[entry.comicId] = p
-
-            // Intentar detectar el total de páginas
             val file = File(entry.path)
             val pageCount = withContext(Dispatchers.IO) {
                 try {
                     when {
                         file.isDirectory -> file.listFiles()?.count { it.isFile } ?: 0
-                        else -> 0 // PDF/ZIP se calcula al abrir
+                        else -> 0
                     }
                 } catch (e: Exception) { 0 }
             }
             pages[entry.comicId] = pageCount
         }
-        progressMap = progress
         pageCountMap = pages
     }
 
@@ -90,7 +85,6 @@ fun HistoryScreen(
         loadHistory()
     }
 
-    // Diálogo borrar del historial
     if (entryToDelete != null) {
         AlertDialog(
             onDismissRequest = { entryToDelete = null },
@@ -129,7 +123,6 @@ fun HistoryScreen(
             .background(Color(0xFF0E0E0E))
             .padding(12.dp)
     ) {
-        // Cabecera
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -208,7 +201,6 @@ fun HistoryScreen(
                             currentPage = progress,
                             totalPages = pageCount,
                             onClick = {
-                                // Abrir el cómic en la página donde lo dejaste
                                 val file = File(entry.path)
                                 val type = detectType(file.name)
                                 val comic = Comic(
@@ -254,7 +246,6 @@ private fun HistoryRow(
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Icono tipo
         Box(
             modifier = Modifier
                 .size(50.dp)
@@ -263,7 +254,7 @@ private fun HistoryRow(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = when (detectType(entry.title)) {
+                text = when (detectType(entry.path)) {
                     ComicType.CBZ -> "📕"
                     ComicType.CBR -> "📕"
                     ComicType.ZIP -> "📦"
@@ -280,7 +271,6 @@ private fun HistoryRow(
         Spacer(modifier = Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            // Título
             Text(
                 text = entry.title,
                 color = Color.White,
@@ -292,7 +282,6 @@ private fun HistoryRow(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Info
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = formatSize(File(entry.path).length()),
@@ -307,7 +296,6 @@ private fun HistoryRow(
                 )
             }
 
-            // Página actual / total
             if (currentPage > 0 || totalPages > 0) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -321,7 +309,6 @@ private fun HistoryRow(
                 )
             }
 
-            // Barra de progreso
             if (percentage > 0) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Box(
@@ -347,7 +334,6 @@ private fun HistoryRow(
             }
         }
 
-        // Menú ⋮
         Text(
             text = "⋮",
             fontSize = 20.sp,
