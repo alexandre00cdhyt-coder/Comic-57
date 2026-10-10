@@ -21,11 +21,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -53,6 +59,8 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.reader.PageExtractor
+import com.mangauniversal.app.data.settings.Bookmark
+import com.mangauniversal.app.data.settings.BookmarkManager
 import com.mangauniversal.app.data.settings.ProgressSaver
 import com.mangauniversal.app.data.settings.ReaderMode
 import com.mangauniversal.app.data.settings.ReaderPreferences
@@ -66,6 +74,7 @@ import java.io.File
 fun ReaderScreen(
     comic: Comic,
     comicsList: List<Comic>,
+    initialPageOverride: Int = -1,
     onBack: () -> Unit,
     onOpenComic: (Comic) -> Unit
 ) {
@@ -73,6 +82,7 @@ fun ReaderScreen(
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val prefs = remember { ReaderPreferences(context) }
+    val bookmarkManager = remember { BookmarkManager(context) }
 
     var pages by remember { mutableStateOf<List<File>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -82,6 +92,8 @@ fun ReaderScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var showFitDialog by remember { mutableStateOf(false) }
     var showModeDialog by remember { mutableStateOf(false) }
+    var showBookmarkDialog by remember { mutableStateOf(false) }
+    var bookmarkNote by remember { mutableStateOf("") }
     var currentPage by remember { mutableIntStateOf(0) }
     var pendingPage by remember { mutableIntStateOf(-1) }
     var initialPage by remember { mutableIntStateOf(-1) }
@@ -104,11 +116,17 @@ fun ReaderScreen(
 
     LaunchedEffect(Unit) {
         readerMode = prefs.getMode()
-        val saved = prefs.getProgress(comic.id)
-        if (saved > 0) {
-            initialPage = saved
-            pendingPage = saved
-            currentPage = saved
+        if (initialPageOverride >= 0) {
+            initialPage = initialPageOverride
+            pendingPage = initialPageOverride
+            currentPage = initialPageOverride
+        } else {
+            val saved = prefs.getProgress(comic.id)
+            if (saved > 0) {
+                initialPage = saved
+                pendingPage = saved
+                currentPage = saved
+            }
         }
     }
 
@@ -162,6 +180,77 @@ fun ReaderScreen(
         if (pagesLoaded && pages != null && pages!!.isNotEmpty()) {
             ProgressSaver.saveProgress(context, comic.id, currentPage)
         }
+    }
+
+    if (showBookmarkDialog) {
+        AlertDialog(
+            onDismissRequest = { showBookmarkDialog = false },
+            title = {
+                Text("Añadir marcador", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Página ${currentPage + 1}",
+                        color = Color(0xFFFF6B00),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    TextField(
+                        value = bookmarkNote,
+                        onValueChange = { bookmarkNote = it },
+                        placeholder = {
+                            Text("Nota (opcional)", color = Color.White.copy(alpha = 0.4f), fontSize = 13.sp)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = false,
+                        maxLines = 3,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color(0xFF2A2A2A),
+                            unfocusedContainerColor = Color(0xFF2A2A2A),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedIndicatorColor = Color(0xFFFF6B00),
+                            unfocusedIndicatorColor = Color.White.copy(alpha = 0.2f),
+                            cursorColor = Color(0xFFFF6B00)
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val note = bookmarkNote
+                    bookmarkNote = ""
+                    showBookmarkDialog = false
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            bookmarkManager.add(
+                                Bookmark(
+                                    comicId = comic.id,
+                                    comicTitle = comic.title,
+                                    comicPath = comic.path,
+                                    page = currentPage,
+                                    note = note,
+                                    addedAt = System.currentTimeMillis()
+                                )
+                            )
+                        }
+                    }
+                }) {
+                    Text("Guardar", color = Color(0xFFFF6B00), fontSize = 13.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    bookmarkNote = ""
+                    showBookmarkDialog = false
+                }) {
+                    Text("Cancelar", color = Color.White, fontSize = 13.sp)
+                }
+            },
+            containerColor = Color(0xFF1A1A1A)
+        )
     }
 
     Box(
@@ -296,6 +385,16 @@ fun ReaderScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                Icon(
+                    imageVector = Icons.Default.BookmarkBorder,
+                    contentDescription = "Añadir marcador",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clickable { showBookmarkDialog = true }
+                        .padding(horizontal = 2.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "<#",
                     fontSize = 15.sp,
@@ -393,58 +492,4 @@ fun ReaderScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = when (mode) {
-                                        ReaderMode.RIGHT -> (if (readerMode == mode) "✓ " else "   ") + "→ Derecha"
-                                        ReaderMode.LEFT -> (if (readerMode == mode) "✓ " else "   ") + "← Izquierda"
-                                        ReaderMode.VERTICAL -> (if (readerMode == mode) "✓ " else "   ") + "↓ Vertical"
-                                    },
-                                    color = if (readerMode == mode) Color(0xFFFF6B00) else Color.White,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showModeDialog = false }) {
-                        Text("Cerrar", color = Color.White, fontSize = 13.sp)
-                    }
-                },
-                containerColor = Color(0xFF1A1A1A)
-            )
-        }
-
-        if (showFitDialog) {
-            AlertDialog(
-                onDismissRequest = { showFitDialog = false },
-                title = { Text("Ajuste de imagen", color = Color.White, fontSize = 15.sp) },
-                text = {
-                    Column {
-                        ImageFitMode.values().forEach { mode ->
-                            TextButton(
-                                onClick = {
-                                    fitMode = mode
-                                    showFitDialog = false
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = (if (fitMode == mode) "✓ " else "   ") + mode.label,
-                                    color = if (fitMode == mode) Color(0xFFFF6B00) else Color.White,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showFitDialog = false }) {
-                        Text("Cerrar", color = Color.White, fontSize = 13.sp)
-                    }
-                },
-                containerColor = Color(0xFF1A1A1A)
-            )
-        }
-    }
-}
+                        
