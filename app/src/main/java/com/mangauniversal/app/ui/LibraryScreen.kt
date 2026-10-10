@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -29,8 +28,6 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -428,7 +425,6 @@ private fun FolderGridItem(dir: File, onClick: () -> Unit) {
 
 @Composable
 private fun ComicRowWithThumbnail(comic: Comic, extractor: ThumbnailExtractor) {
-    val context = LocalContext.current
     var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(comic.id) {
@@ -496,4 +492,11 @@ private fun ComicRowCompact(comic: Comic) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(text = iconFor(comic.type), fontSize = 18.sp, modifier = Modifier.width(28.dp))
-        Spacer(Modifier.width(10.dp)
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = comic.title,
+            color = Color.White,
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+  
