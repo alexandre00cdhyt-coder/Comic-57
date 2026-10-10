@@ -53,11 +53,10 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.reader.PageExtractor
+import com.mangauniversal.app.data.settings.ProgressSaver
 import com.mangauniversal.app.data.settings.ReaderMode
 import com.mangauniversal.app.data.settings.ReaderPreferences
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,7 +72,6 @@ fun ReaderScreen(
     val context = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
-    val globalScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
     val prefs = remember { ReaderPreferences(context) }
 
     var pages by remember { mutableStateOf<List<File>?>(null) }
@@ -89,7 +87,6 @@ fun ReaderScreen(
     var initialPage by remember { mutableIntStateOf(-1) }
     var pagesLoaded by remember { mutableStateOf(false) }
 
-    // Estado para el slider
     var isSliding by remember { mutableStateOf(false) }
     var sliderPage by remember { mutableIntStateOf(0) }
 
@@ -115,11 +112,8 @@ fun ReaderScreen(
         }
     }
 
-    // Guardar historial (con globalScope para que no se cancele)
     LaunchedEffect(comic.id) {
-        globalScope.launch {
-            prefs.addToHistory(comic.id, comic.title, comic.path)
-        }
+        ProgressSaver.addToHistory(context, comic.id, comic.title, comic.path)
     }
 
     DisposableEffect(comic.id) {
@@ -132,11 +126,7 @@ fun ReaderScreen(
 
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
-            val pageToSave = currentPage
-            val idToSave = comic.id
-            globalScope.launch {
-                prefs.saveProgress(idToSave, pageToSave)
-            }
+            ProgressSaver.saveProgress(context, comic.id, currentPage)
         }
     }
 
@@ -144,9 +134,7 @@ fun ReaderScreen(
         if (controlsVisible) {
             controlsVisible = false
         } else {
-            val pageToSave = currentPage
-            val idToSave = comic.id
-            globalScope.launch { prefs.saveProgress(idToSave, pageToSave) }
+            ProgressSaver.saveProgress(context, comic.id, currentPage)
             onBack()
         }
     }
@@ -172,11 +160,7 @@ fun ReaderScreen(
 
     LaunchedEffect(currentPage) {
         if (pagesLoaded && pages != null && pages!!.isNotEmpty()) {
-            val idToSave = comic.id
-            val pageToSave = currentPage
-            globalScope.launch {
-                prefs.saveProgress(idToSave, pageToSave)
-            }
+            ProgressSaver.saveProgress(context, comic.id, currentPage)
         }
     }
 
@@ -218,9 +202,7 @@ fun ReaderScreen(
                         onPageChanged = { currentPage = it },
                         onCenterTap = { controlsVisible = !controlsVisible },
                         onNextComic = {
-                            val idToSave = comic.id
-                            val pageToSave = currentPage
-                            globalScope.launch { prefs.saveProgress(idToSave, pageToSave) }
+                            ProgressSaver.saveProgress(context, comic.id, currentPage)
                             nextComic?.let { onOpenComic(it) }
                         },
                         onPendingPageConsumed = { pendingPage = -1 }
@@ -232,9 +214,7 @@ fun ReaderScreen(
                         onPageChanged = { currentPage = it },
                         onCenterTap = { controlsVisible = !controlsVisible },
                         onNextComic = {
-                            val idToSave = comic.id
-                            val pageToSave = currentPage
-                            globalScope.launch { prefs.saveProgress(idToSave, pageToSave) }
+                            ProgressSaver.saveProgress(context, comic.id, currentPage)
                             nextComic?.let { onOpenComic(it) }
                         },
                         onPendingPageConsumed = { pendingPage = -1 }
@@ -243,7 +223,6 @@ fun ReaderScreen(
             }
         }
 
-        // ─────────── MINIATURA AL ARRASTRAR SLIDER ───────────
         if (isSliding && pages != null && sliderPage in pages!!.indices) {
             Box(
                 modifier = Modifier
@@ -266,7 +245,6 @@ fun ReaderScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Número de página encima
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -302,9 +280,7 @@ fun ReaderScreen(
                     color = Color.White,
                     modifier = Modifier
                         .clickable {
-                            val idToSave = comic.id
-                            val pageToSave = currentPage
-                            globalScope.launch { prefs.saveProgress(idToSave, pageToSave) }
+                            ProgressSaver.saveProgress(context, comic.id, currentPage)
                             onBack()
                         }
                         .padding(horizontal = 8.dp)
@@ -363,7 +339,6 @@ fun ReaderScreen(
             }
         }
 
-        // ─────────── BARRA INFERIOR CON SLIDER ───────────
         if (pages != null && controlsVisible) {
             val totalPages = pages!!.size
             Row(
@@ -381,7 +356,6 @@ fun ReaderScreen(
                         sliderPage = newValue.toInt()
                     },
                     onValueChangeFinished = {
-                        // Al soltar → saltar a la página elegida
                         currentPage = sliderPage
                         pendingPage = sliderPage
                         isSliding = false
