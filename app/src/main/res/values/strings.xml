@@ -1,8 +1,43 @@
 <resources>
     <string name="app_name">Manga Universal</string>
+
+    <!-- Pantallas -->
     <string name="history_title">Historial de Lectura</string>
     <string name="reader_title">Lector</string>
+    <string name="library_title">Biblioteca</string>
+    <string name="storage_title">Almacenamiento</string>
+    <string name="permission_title">Acceso a archivos</string>
+    <string name="settings_title">Ajustes</string>
+
+    <!-- Estados vacíos -->
     <string name="empty_history">No hay lectura reciente</string>
-    <string name="page_indicator">Página %1$d de %2$d</string>
+    <string name="empty_library">No se encontraron cómics</string>
+    <string name="empty_folder">Esta carpeta está vacía</string>
+    <string name="empty_folder_hint">Marca esta carpeta con ⭐ para añadirla como favorita</string>
+
+    <!-- Errores -->
     <string name="error_opening_file">Error al abrir el archivo o formato no soportado</string>
+    <string name="error_loading_pages">No se pudieron cargar las páginas</string>
+
+    <!-- Lector -->
+    <string name="page_indicator">Página %1$d de %2$d</string>
+    <string name="loading_pages">Cargando páginas…</string>
+    <string name="mode_reader">Modo de lectura</string>
+    <string name="mode_right">→ Derecha</string>
+    <string name="mode_left">← Izquierda</string>
+    <string name="mode_vertical">↓ Vertical</string>
+    <string name="fit_image">Ajuste de imagen</string>
+
+    <!-- Permisos -->
+    <string name="permission_message">Para explorar tus cómics, la app necesita acceso a todos los archivos.</string>
+    <string name="permission_step_1">1. Abre ajustes y activa el permiso.</string>
+    <string name="permission_step_2">2. Vuelve y toca "Ya di el permiso".</string>
+    <string name="permission_granted">Ya di el permiso</string>
+    <string name="permission_open_settings">Abrir ajustes</string>
+
+    <!-- Botones comunes -->
+    <string name="cancel">Cancelar</string>
+    <string name="close">Cerrar</string>
+    <string name="back">Volver</string>
+    <string name="search_hint">Buscar cómic…</string>
 </resources>
