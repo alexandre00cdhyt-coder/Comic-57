@@ -6,13 +6,16 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
+import com.mangauniversal.app.domain.util.NaturalOrderComparator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
+import java.security.MessageDigest
 import java.util.zip.ZipFile
 import net.sf.sevenzipjbinding.ExtractOperationResult
 import net.sf.sevenzipjbinding.ISequentialOutStream
@@ -25,9 +28,12 @@ class ThumbnailExtractor(private val context: Context) {
         File(context.cacheDir, "thumbs").apply { mkdirs() }
     }
 
+    private val naturalComparator = NaturalOrderComparator()
+    private val thumbnailWidth = 400
+
     suspend fun getThumbnail(comic: Comic): File? = withContext(Dispatchers.IO) {
         try {
-            val outFile = File(thumbsDir, "${comic.id.hashCode()}.jpg")
+            val outFile = File(thumbsDir, "${hashId(comic.id)}.jpg")
 
             if (outFile.exists() && outFile.length() > 0) {
                 return@withContext outFile
@@ -43,16 +49,69 @@ class ThumbnailExtractor(private val context: Context) {
 
             if (extracted == null) return@withContext null
 
-            val scaled: Bitmap = scaleBitmap(extracted, 400)
-
             FileOutputStream(outFile).use { out ->
-                scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                extracted.compress(Bitmap.CompressFormat.JPEG, 80, out)
             }
-
-            if (scaled !== extracted) scaled.recycle()
             extracted.recycle()
 
             if (outFile.exists() && outFile.length() > 0) outFile else null
+        } catch (e: OutOfMemoryError) {
+            Log.e("ThumbnailExtractor", "OOM en ${comic.path}")
+            null
+        } catch (e: Exception) {
+            Log.e("ThumbnailExtractor", "Error en ${comic.path}", e)
+            null
+        }
+    }
+
+    private fun decodeSampledBitmap(file: File, reqWidth: Int): Bitmap? {
+        return try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+
+            if (options.outWidth <= 0 || options.outHeight <= 0) return null
+
+            var sampleSize = 1
+            while (options.outWidth / (sampleSize * 2) >= reqWidth) {
+                sampleSize *= 2
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
+        } catch (e: OutOfMemoryError) {
+            Log.e("ThumbnailExtractor", "OOM decodificando ${file.name}")
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun decodeSampledBitmap(input: java.io.InputStream, reqWidth: Int): Bitmap? {
+        return try {
+            val bytes = input.readBytes()
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            if (options.outWidth <= 0) return null
+
+            var sampleSize = 1
+            while (options.outWidth / (sampleSize * 2) >= reqWidth) {
+                sampleSize *= 2
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
+        } catch (e: OutOfMemoryError) {
+            null
         } catch (e: Exception) {
             null
         }
@@ -62,9 +121,9 @@ class ThumbnailExtractor(private val context: Context) {
         val folder = File(comic.path)
         val image = folder.listFiles()
             ?.filter { it.isFile && isImage(it.name) }
-            ?.minByOrNull { it.name.lowercase() }
+            ?.minWithOrNull { a, b -> naturalComparator.compare(a.name, b.name) }
             ?: return null
-        return BitmapFactory.decodeFile(image.absolutePath)
+        return decodeSampledBitmap(image, thumbnailWidth)
     }
 
     private fun extractFromZip(comic: Comic): Bitmap? {
@@ -72,57 +131,62 @@ class ThumbnailExtractor(private val context: Context) {
         ZipFile(file).use { zip ->
             val imageEntry = zip.entries().asSequence()
                 .filter { !it.isDirectory && isImage(it.name) }
-                .minByOrNull { it.name.lowercase() }
+                .minWithOrNull { a, b -> naturalComparator.compare(a.name, b.name) }
                 ?: return null
-            zip.getInputStream(imageEntry).use { input ->
-                return BitmapFactory.decodeStream(input)
+            return zip.getInputStream(imageEntry).use { input ->
+                decodeSampledBitmap(input, thumbnailWidth)
             }
         }
     }
 
     private fun extractFromRar(comic: Comic): Bitmap? {
         val file = File(comic.path)
-        val temp = File(context.cacheDir, "temp_thumb_${comic.id.hashCode()}.img")
+        val temp = File(context.cacheDir, "temp_thumb_${hashId(comic.id)}.img")
         var randomAccessFile: RandomAccessFile? = null
+        var archive: net.sf.sevenzipjbinding.IInArchive? = null
 
         try {
             randomAccessFile = RandomAccessFile(file, "r")
-            val archive = SevenZip.openInArchive(null, RandomAccessFileInStream(randomAccessFile))
+            archive = SevenZip.openInArchive(null, RandomAccessFileInStream(randomAccessFile))
             val simpleArchive = archive.simpleInterface
             val item = simpleArchive.archiveItems
                 ?.filter { !it.isFolder && isImage(it.path) }
-                ?.minByOrNull { it.path.lowercase() }
-                ?: run {
-                    archive.close()
-                    return null
-                }
+                ?.minWithOrNull { a, b -> naturalComparator.compare(a.path, b.path) }
+                ?: return null
 
-            // Extraer a archivo temporal
-            val result = item.extractSlow(object : ISequentialOutStream {
-                override fun write(data: ByteArray): Int {
-                    return try {
-                        FileOutputStream(temp, true).use { out -> out.write(data) }
-                        data.size
-                    } catch (e: Exception) {
-                        0
+            temp.delete()
+            val out = FileOutputStream(temp)
+            val result = try {
+                item.extractSlow(object : ISequentialOutStream {
+                    override fun write(data: ByteArray): Int {
+                        return try {
+                            out.write(data)
+                            data.size
+                        } catch (e: Exception) {
+                            0
+                        }
                     }
-                }
-            })
-
-            archive.close()
+                })
+            } finally {
+                out.close()
+            }
 
             if (result != ExtractOperationResult.OK) {
                 temp.delete()
                 return null
             }
 
-            val bmp = BitmapFactory.decodeFile(temp.absolutePath)
+            val bmp = decodeSampledBitmap(temp, thumbnailWidth)
             temp.delete()
             return bmp
+        } catch (e: OutOfMemoryError) {
+            temp.delete()
+            return null
         } catch (e: Exception) {
             temp.delete()
             return null
         } finally {
+            try { archive?.close() } catch (e: Exception) { }
             try { randomAccessFile?.close() } catch (e: Exception) { }
         }
     }
@@ -133,9 +197,9 @@ class ThumbnailExtractor(private val context: Context) {
             PdfRenderer(pfd).use { renderer ->
                 if (renderer.pageCount == 0) return null
                 renderer.openPage(0).use { page ->
-                    val width = 400
+                    val width = thumbnailWidth
                     val height = (width * page.height.toFloat() / page.width.toFloat()).toInt()
-                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
                     bitmap.eraseColor(Color.WHITE)
                     page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     return bitmap
@@ -144,15 +208,18 @@ class ThumbnailExtractor(private val context: Context) {
         }
     }
 
-    private fun scaleBitmap(src: Bitmap, maxWidth: Int): Bitmap {
-        if (src.width <= maxWidth) return src
-        val ratio = maxWidth.toFloat() / src.width
-        val newHeight = (src.height * ratio).toInt()
-        return Bitmap.createScaledBitmap(src, maxWidth, newHeight, true)
-    }
-
     private fun isImage(name: String): Boolean {
         val ext = name.substringAfterLast('.', "").lowercase()
         return ext in setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "avif")
+    }
+
+    private fun hashId(id: String): String {
+        return try {
+            MessageDigest.getInstance("SHA-1")
+                .digest(id.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            id.hashCode().toString()
+        }
     }
 }
