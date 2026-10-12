@@ -551,11 +551,11 @@ fun DirectoryTab(
         )
         Spacer(Modifier.height(16.dp))
         Text("Directorio", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(8.dp))
         Text(
             "Explora tus carpetas de cómics",
             color = Color.White.copy(alpha = 0.6f),
-            fontSize = 13.s  
+            fontSize = 13.sp
         )
         Spacer(Modifier.height(24.dp))
         Button(
