@@ -1,6 +1,5 @@
 package com.mangauniversal.app.ui
 
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import com.mangauniversal.app.data.settings.BackgroundConfig
 import com.mangauniversal.app.data.settings.BackgroundManager
+import java.io.File
 
 @Composable
 fun BackgroundWrapper(
@@ -32,9 +32,9 @@ fun BackgroundWrapper(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0E0E0E))) {
-        if (config.useBackground && config.imageUri != null) {
+        if (config.useBackground && config.imagePath != null) {
             AsyncImage(
-                model = Uri.parse(config.imageUri),
+                model = File(config.imagePath),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
