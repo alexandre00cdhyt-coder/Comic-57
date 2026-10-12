@@ -114,7 +114,9 @@ fun LibraryScreen(
     }
 
     val currentDir = remember(currentPath) { File(currentPath) }
-    val canGoUp = currentDir.parentFile != null && currentPath != folderPath
+    val parentDir = currentDir.parentFile
+    val isRootFolder = currentPath == folderPath
+    val canGoUp = !isRootFolder && parentDir != null
 
     Column(
         modifier = Modifier
@@ -130,7 +132,7 @@ fun LibraryScreen(
         ) {
             IconButton(onClick = {
                 if (canGoUp) {
-                    currentPath = currentDir.parentFile!!.absolutePath
+                    currentPath = parentDir!!.absolutePath
                 } else {
                     onBack()
                 }
@@ -497,7 +499,7 @@ private fun ComicRowCompact(comic: Comic) {
             text = comic.title,
             color = Color.White,
             fontSize = 13.sp,
-            maxLines = 1,
+                        maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
@@ -574,3 +576,4 @@ private fun formatSize(bytes: Long): String {
         else -> "${bytes / (1024L * 1024L * 1024L)} GB"
     }
 }
+            
