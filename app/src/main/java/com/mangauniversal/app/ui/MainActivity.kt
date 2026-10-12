@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -288,7 +289,6 @@ fun MangaUniversalApp() {
         )
     }
 }
-
 @Composable
 fun PermissionDialog(
     onOpenSettings: () -> Unit,
@@ -473,7 +473,7 @@ fun TopBar(
 }
 
 @Composable
-private fun TabItem(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun RowScope.TabItem(label: String, selected: Boolean, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .weight(1f)
@@ -538,32 +538,37 @@ private fun BottomBarItem(
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.TabItem(label: String, selected: Boolean, onClick: () -> Unit) {
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit
+fun DirectoryTab(
+    hasPermission: Boolean,
+    onOpenStorage: (String) -> Unit
 ) {
     Column(
-        modifier = Modifier
-            .weight(1f)
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = label,
-            color = if (selected) Color.White else Color.White.copy(alpha = 0.6f),
-            fontSize = 14.sp,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
+        Icon(
+            Icons.Default.Folder,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.5f),
+            modifier = Modifier.size(64.dp)
         )
-        if (selected) {
-            Spacer(Modifier.height(6.dp))
-            Box(
-                modifier = Modifier
-                    .width(60.dp)
-                    .height(3.dp)
-                    .background(Color(0xFF4A90E2))
-            )
+        Spacer(Modifier.height(16.dp))
+        Text("Directorio", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Explora tus carpetas de cómics",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp
+        )
+        Spacer(Modifier.height(24.dp))
+        Button(
+            onClick = {
+                onOpenStorage(Environment.getExternalStorageDirectory().absolutePath)
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))
+        ) {
+            Text("Abrir almacenamiento", color = Color.White)
         }
     }
 }
