@@ -85,9 +85,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color(0xFF0E0E0E)
                 ) {
-                    BackgroundWrapper {
-                        MangaUniversalApp()
-                    }
+                    MangaUniversalApp()
                 }
             }
         }
@@ -130,9 +128,6 @@ fun MangaUniversalApp() {
         pendingPathAfterPermission = path
         showPermissionDialog = true
         openAllFilesSettings(context.packageName, context)
-    }
-
-    BackHandler(enabled = currentScreen is Screen.Home) {
     }
 
     if (showPermissionDialog) {
@@ -289,6 +284,7 @@ fun MangaUniversalApp() {
         )
     }
 }
+
 @Composable
 fun PermissionDialog(
     onOpenSettings: () -> Unit,
@@ -559,7 +555,7 @@ fun DirectoryTab(
         Text(
             "Explora tus carpetas de cómics",
             color = Color.White.copy(alpha = 0.6f),
-            fontSize = 13.sp
+            fontSize = 13.s  
         )
         Spacer(Modifier.height(24.dp))
         Button(
