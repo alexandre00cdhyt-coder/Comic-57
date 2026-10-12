@@ -1,6 +1,5 @@
 package com.mangauniversal.app.ui
 
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +53,7 @@ import com.mangauniversal.app.data.settings.BackgroundConfig
 import com.mangauniversal.app.data.settings.BackgroundManager
 import com.mangauniversal.app.data.settings.ThemePreferences
 import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun SettingsScreen(
@@ -70,11 +70,13 @@ fun SettingsScreen(
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+    ) { uri ->
         if (uri != null) {
             scope.launch {
-                bgManager.saveImage(uri)
-                bgManager.saveEnabled(true)
+                val ok = bgManager.saveImageFromUri(uri)
+                if (ok) {
+                    bgManager.saveEnabled(true)
+                }
                 bgConfig = bgManager.load()
             }
         }
@@ -154,7 +156,7 @@ fun SettingsScreen(
 
             SwitchRow(
                 title = "Usar fondo de galería",
-                subtitle = if (bgConfig.imageUri != null) "Imagen seleccionada" else "Sin imagen",
+                subtitle = if (bgConfig.imagePath != null) "Imagen seleccionada" else "Sin imagen",
                 checked = bgConfig.useBackground,
                 onCheckedChange = {
                     scope.launch {
@@ -164,7 +166,7 @@ fun SettingsScreen(
                 }
             )
 
-            if (bgConfig.imageUri != null) {
+            if (bgConfig.imagePath != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -179,7 +181,7 @@ fun SettingsScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         AsyncImage(
-                            model = Uri.parse(bgConfig.imageUri),
+                            model = File(bgConfig.imagePath),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
@@ -208,7 +210,7 @@ fun SettingsScreen(
                 onClick = { imagePicker.launch("image/*") }
             )
 
-            if (bgConfig.imageUri != null) {
+            if (bgConfig.imagePath != null) {
                 SliderRow(
                     title = "Opacidad del fondo",
                     value = bgConfig.opacity,
@@ -469,7 +471,7 @@ private fun ThemeSelector(
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.ThemeButton(
+private fun RowScope.ThemeButton(
     label: String,
     value: String,
     currentTheme: String,
