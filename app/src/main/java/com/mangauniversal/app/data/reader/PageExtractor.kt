@@ -6,7 +6,7 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
-import com.mangauniversal.app.data.scanner.NaturalOrderComparator
+import com.mangauniversal.app.domain.util.NaturalOrderComparator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -17,9 +17,7 @@ import net.sf.sevenzipjbinding.ExtractOperationResult
 import net.sf.sevenzipjbinding.IInArchive
 import net.sf.sevenzipjbinding.ISequentialOutStream
 import net.sf.sevenzipjbinding.SevenZip
-import net.sf.sevenzipjbinding.SevenZipException
 import net.sf.sevenzipjbinding.impl.RandomAccessFileInStream
-import net.sf.sevenzipjbinding.simple.ISimpleInArchiveItem
 
 class PageExtractor(private val context: Context) {
 
@@ -27,6 +25,10 @@ class PageExtractor(private val context: Context) {
         File(context.cacheDir, "pages").apply { mkdirs() }
     }
 
+    /**
+     * Devuelve la lista de archivos de imagen.
+     * Para PDF, devolverá un archivo vacío (marcador) y la renderización se hará bajo demanda.
+     */
     suspend fun getPages(comic: Comic): List<File> = withContext(Dispatchers.IO) {
         try {
             val targetDir = File(pagesRoot, comic.id.hashCode().toString())
@@ -44,7 +46,7 @@ class PageExtractor(private val context: Context) {
             when (comic.type) {
                 ComicType.FOLDER -> extractFolder(comic, targetDir)
                 ComicType.CBZ, ComicType.ZIP -> extractZip(comic, targetDir)
-                ComicType.PDF -> extractPdf(comic, targetDir)
+                ComicType.PDF -> listOf(File(comic.path)) // Para PDF, devolvemos el archivo original
                 ComicType.CBR, ComicType.RAR -> extractRar(comic, targetDir)
                 else -> emptyList()
             }
@@ -85,36 +87,6 @@ class PageExtractor(private val context: Context) {
         return outFiles
     }
 
-    private fun extractPdf(comic: Comic, targetDir: File): List<File> {
-        val file = File(comic.path)
-        val outFiles = mutableListOf<File>()
-        ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-            PdfRenderer(pfd).use { renderer ->
-                for (i in 0 until renderer.pageCount) {
-                    try {
-                        renderer.openPage(i).use { page ->
-                            val width = 1200
-                            val height = (width * page.height.toFloat() / page.width.toFloat()).toInt()
-                            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                            bitmap.eraseColor(android.graphics.Color.WHITE)
-                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                            val outFile = File(targetDir, String.format("%05d.jpg", i + 1))
-                            FileOutputStream(outFile).use { out ->
-                                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
-                            }
-                            bitmap.recycle()
-                            if (outFile.exists() && outFile.length() > 0) outFiles.add(outFile)
-                        }
-                    } catch (e: Exception) { }
-                }
-            }
-        }
-        return outFiles
-    }
-
-    /**
-     * Extrae archivos de RAR (4 y 5) y 7Z usando sevenzipjbinding.
-     */
     private fun extractRar(comic: Comic, targetDir: File): List<File> {
         val file = File(comic.path)
         val outFiles = mutableListOf<File>()
@@ -168,6 +140,55 @@ class PageExtractor(private val context: Context) {
         }
 
         return outFiles
+    }
+
+    /**
+     * Renderiza una página específica de un PDF a un archivo temporal.
+     * Esto es lo que hace que los PDFs abran al instante.
+     */
+    suspend fun renderPdfPage(pdfFile: File, pageIndex: Int, cacheDir: File): File? = withContext(Dispatchers.IO) {
+        try {
+            val outFile = File(cacheDir, String.format("pdf_page_%05d.jpg", pageIndex))
+            if (outFile.exists() && outFile.length() > 0) return@withContext outFile
+
+            ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    if (pageIndex < 0 || pageIndex >= renderer.pageCount) return@withContext null
+                    
+                    renderer.openPage(pageIndex).use { page ->
+                        // Resolución para el lector
+                        val width = 1200
+                        val height = (width * page.height.toFloat() / page.width.toFloat()).toInt()
+                        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                        bitmap.eraseColor(android.graphics.Color.WHITE)
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        
+                        FileOutputStream(outFile).use { out ->
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                        }
+                        bitmap.recycle()
+                    }
+                }
+            }
+            if (outFile.exists() && outFile.length() > 0) outFile else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Obtiene la cantidad de páginas de un PDF.
+     */
+    suspend fun getPdfPageCount(pdfFile: File): Int = withContext(Dispatchers.IO) {
+        try {
+            ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    renderer.pageCount
+                }
+            }
+        } catch (e: Exception) {
+            0
+        }
     }
 
     private fun isImage(name: String): Boolean {
