@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -58,6 +57,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.mangauniversal.app.data.model.Comic
+import com.mangauniversal.app.data.model.ComicType
 import com.mangauniversal.app.data.reader.PageExtractor
 import com.mangauniversal.app.data.settings.Bookmark
 import com.mangauniversal.app.data.settings.BookmarkManager
@@ -83,8 +83,10 @@ fun ReaderScreen(
     val scope = rememberCoroutineScope()
     val prefs = remember { ReaderPreferences(context) }
     val bookmarkManager = remember { BookmarkManager(context) }
+    val pageExtractor = remember { PageExtractor(context) }
 
     var pages by remember { mutableStateOf<List<File>?>(null) }
+    var pdfFile by remember { mutableStateOf<File?>(null) } // Para PDFs
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var fitMode by remember { mutableStateOf(ImageFitMode.FIT_WIDTH) }
@@ -161,14 +163,27 @@ fun ReaderScreen(
         isLoading = true
         errorMessage = null
         try {
-            val result = withContext(Dispatchers.IO) {
-                PageExtractor(context).getPages(comic)
-            }
-            if (result.isEmpty()) {
-                errorMessage = "No se pudieron cargar las páginas"
+            if (comic.type == ComicType.PDF) {
+                val file = File(comic.path)
+                pdfFile = file
+                val count = pageExtractor.getPdfPageCount(file)
+                if (count > 0) {
+                    // Generamos una lista ficticia con la cantidad de páginas
+                    pages = List(count) { File(comic.path) }
+                    pagesLoaded = true
+                } else {
+                    errorMessage = "PDF vacío o corrupto"
+                }
             } else {
-                pages = result
-                pagesLoaded = true
+                val result = withContext(Dispatchers.IO) {
+                    pageExtractor.getPages(comic)
+                }
+                if (result.isEmpty()) {
+                    errorMessage = "No se pudieron cargar las páginas"
+                } else {
+                    pages = result
+                    pagesLoaded = true
+                }
             }
         } catch (e: Exception) {
             errorMessage = "Error: ${e.message}"
@@ -280,11 +295,14 @@ fun ReaderScreen(
                 }
             }
             pages != null -> {
-                when (readerMode) {
-                    ReaderMode.RIGHT, ReaderMode.LEFT -> ReaderHorizontal(
-                        pages = pages!!,
+                if (comic.type == ComicType.PDF && pdfFile != null) {
+                    // LECTOR DE PDF NATIVO (Al vuelo)
+                    PdfReaderScreen(
+                        pdfFile = pdfFile!!,
+                        pageCount = pages!!.size,
+                        extractor = pageExtractor,
                         fitMode = fitMode,
-                        reverse = readerMode == ReaderMode.LEFT,
+                        readerMode = readerMode,
                         initialPage = initialPage,
                         pendingPage = pendingPage,
                         isLastComic = nextComic == null,
@@ -296,23 +314,42 @@ fun ReaderScreen(
                         },
                         onPendingPageConsumed = { pendingPage = -1 }
                     )
-                    ReaderMode.VERTICAL -> ReaderVertical(
-                        pages = pages!!,
-                        isLastComic = nextComic == null,
-                        pendingPage = pendingPage,
-                        onPageChanged = { currentPage = it },
-                        onCenterTap = { controlsVisible = !controlsVisible },
-                        onNextComic = {
-                            ProgressSaver.saveProgress(context, comic.id, currentPage)
-                            nextComic?.let { onOpenComic(it) }
-                        },
-                        onPendingPageConsumed = { pendingPage = -1 }
-                    )
+                } else {
+                    when (readerMode) {
+                        ReaderMode.RIGHT, ReaderMode.LEFT -> ReaderHorizontal(
+                            pages = pages!!,
+                            fitMode = fitMode,
+                            reverse = readerMode == ReaderMode.LEFT,
+                            initialPage = initialPage,
+                            pendingPage = pendingPage,
+                            isLastComic = nextComic == null,
+                            onPageChanged = { currentPage = it },
+                            onCenterTap = { controlsVisible = !controlsVisible },
+                            onNextComic = {
+                                ProgressSaver.saveProgress(context, comic.id, currentPage)
+                                nextComic?.let { onOpenComic(it) }
+                            },
+                            onPendingPageConsumed = { pendingPage = -1 }
+                        )
+                        ReaderMode.VERTICAL -> ReaderVertical(
+                            pages = pages!!,
+                            isLastComic = nextComic == null,
+                            pendingPage = pendingPage,
+                            onPageChanged = { currentPage = it },
+                            onCenterTap = { controlsVisible = !controlsVisible },
+                            onNextComic = {
+                                ProgressSaver.saveProgress(context, comic.id, currentPage)
+                                nextComic?.let { onOpenComic(it) }
+                            },
+                            onPendingPageConsumed = { pendingPage = -1 }
+                        )
+                    }
                 }
             }
         }
 
         if (isSliding && pages != null && sliderPage in pages!!.indices) {
+            // La previsualización del slider en PDFs puede ser costosa, así que la mostramos simple.
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -322,29 +359,19 @@ fun ReaderScreen(
                     .padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(pages!![sliderPage])
-                        .memoryCacheKey(pages!![sliderPage].absolutePath)
-                        .diskCacheKey(pages!![sliderPage].absolutePath)
-                        .crossfade(false)
-                        .build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .background(Color(0xCC000000), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "Página ${sliderPage + 1}",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
+                if (comic.type == ComicType.PDF && pdfFile != null) {
+                    Text("Página ${sliderPage + 1}", color = Color.White, fontSize = 20.sp)
+                } else {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(pages!![sliderPage])
+                            .memoryCacheKey(pages!![sliderPage].absolutePath)
+                            .diskCacheKey(pages!![sliderPage].absolutePath)
+                            .crossfade(false)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }
@@ -452,11 +479,7 @@ fun ReaderScreen(
                     onValueChange = { newValue ->
                         isSliding = true
                         sliderPage = newValue.toInt()
-                    },
-                    onValueChangeFinished = {
-                        currentPage = sliderPage
-                        pendingPage = sliderPage
-                        isSliding = false
+                                            isSliding = false
                     },
                     valueRange = 0f..(totalPages - 1).toFloat().coerceAtLeast(1f),
                     modifier = Modifier.weight(1f).height(24.dp),
@@ -492,7 +515,7 @@ fun ReaderScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                                                        text = when (mode) {
+                                    text = when (mode) {
                                         ReaderMode.RIGHT -> (if (readerMode == mode) "✓ " else "   ") + "→ Derecha"
                                         ReaderMode.LEFT -> (if (readerMode == mode) "✓ " else "   ") + "← Izquierda"
                                         ReaderMode.VERTICAL -> (if (readerMode == mode) "✓ " else "   ") + "↓ Vertical"
