@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.sp
 import com.mangauniversal.app.data.folder.FolderConfig
 import com.mangauniversal.app.data.folder.FolderManager
 import com.mangauniversal.app.data.model.Comic
+import com.mangauniversal.app.data.settings.AppSettings
+import com.mangauniversal.app.data.settings.ThemePreferences
 import com.mangauniversal.app.ui.history.HistoryScreenContent
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -117,6 +119,21 @@ fun MangaUniversalApp() {
     var showPermissionDialog by remember { mutableStateOf(false) }
     var pendingPathAfterPermission by remember { mutableStateOf<String?>(null) }
 
+    // Ajustes visuales (Brillo y Filtro Azul)
+    val prefs = remember { ThemePreferences(context) }
+    var appSettings by remember { mutableStateOf(AppSettings()) }
+    
+    LaunchedEffect(Unit) {
+        appSettings = prefs.load()
+    }
+    
+    // Recargar ajustes cada vez que volvemos al Home (para aplicar cambios del SettingsScreen)
+    LaunchedEffect(currentScreen) {
+        if (currentScreen is Screen.Home) {
+            appSettings = prefs.load()
+        }
+    }
+
     val folderManager = remember { FolderManager(context) }
     LaunchedEffect(Unit) {
         folderManager.folders.collectLatest { list ->
@@ -155,133 +172,163 @@ fun MangaUniversalApp() {
         )
     }
 
-    when (val screen = currentScreen) {
-        is Screen.Home -> MainTabsScreen(
-            currentTab = currentTab,
-            onTabChange = { currentTab = it },
-            folders = folders,
-            hasPermission = hasPermission,
-            onOpenRecientes = {
-                previousScreen = Screen.Home
-                currentScreen = Screen.History
-            },
-            onOpenStorage = { path ->
-                if (hasPermission) {
+    // ENVOLVEMOS TODA LA APP CON EL FILTRO DE BRILLO Y LUZ AZUL
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (val screen = currentScreen) {
+            is Screen.Home -> MainTabsScreen(
+                currentTab = currentTab,
+                onTabChange = { currentTab = it },
+                folders = folders,
+                hasPermission = hasPermission,
+                onOpenRecientes = {
                     previousScreen = Screen.Home
-                    currentScreen = Screen.Directory(path)
-                } else {
-                    requestPermissionAndOpen(path)
-                }
-            },
-            onOpenFavoriteFolder = { path ->
-                val folder = folders.find { it.path == path }
-                if (folder != null) {
+                    currentScreen = Screen.History
+                },
+                onOpenStorage = { path ->
+                    if (hasPermission) {
+                        previousScreen = Screen.Home
+                        currentScreen = Screen.Directory(path)
+                    } else {
+                        requestPermissionAndOpen(path)
+                    }
+                },
+                onOpenFavoriteFolder = { path ->
+                    val folder = folders.find { it.path == path }
+                    if (folder != null) {
+                        previousScreen = Screen.Home
+                        currentScreen = Screen.Library(folder)
+                    }
+                },
+                onAddFolder = {
+                    if (hasPermission) {
+                        val base = Environment.getExternalStorageDirectory().absolutePath
+                        previousScreen = Screen.Home
+                        currentScreen = Screen.Directory(base)
+                    } else {
+                        requestPermissionAndOpen(Environment.getExternalStorageDirectory().absolutePath)
+                    }
+                },
+                onOpenHistory = {
                     previousScreen = Screen.Home
-                    currentScreen = Screen.Library(folder)
-                }
-            },
-            onAddFolder = {
-                if (hasPermission) {
-                    val base = Environment.getExternalStorageDirectory().absolutePath
+                    currentScreen = Screen.History
+                },
+                onOpenSettings = {
                     previousScreen = Screen.Home
-                    currentScreen = Screen.Directory(base)
-                } else {
-                    requestPermissionAndOpen(Environment.getExternalStorageDirectory().absolutePath)
+                    currentScreen = Screen.Settings
+                },
+                onContinueReading = { comic ->
+                    comicsInFolder = listOf(comic)
+                    selectedComic = comic
+                    pendingPage = -1
+                    previousScreen = Screen.Home
+                    currentScreen = Screen.Reader(comic)
+                },
+                onOpenComicFromTab = { comic ->
+                    comicsInFolder = listOf(comic)
+                    selectedComic = comic
+                    pendingPage = -1
+                    previousScreen = Screen.Home
+                    currentScreen = Screen.Reader(comic)
+                },
+                onOpenBookmark = { comic, page ->
+                    comicsInFolder = listOf(comic)
+                    selectedComic = comic
+                    pendingPage = page
+                    previousScreen = Screen.Home
+                    currentScreen = Screen.Reader(comic)
                 }
-            },
-            onOpenHistory = {
-                previousScreen = Screen.Home
-                currentScreen = Screen.History
-            },
-            onOpenSettings = {
-                previousScreen = Screen.Home
-                currentScreen = Screen.Settings
-            },
-            onContinueReading = { comic ->
-                comicsInFolder = listOf(comic)
-                selectedComic = comic
-                pendingPage = -1
-                previousScreen = Screen.Home
-                currentScreen = Screen.Reader(comic)
-            },
-            onOpenComicFromTab = { comic ->
-                comicsInFolder = listOf(comic)
-                selectedComic = comic
-                pendingPage = -1
-                previousScreen = Screen.Home
-                currentScreen = Screen.Reader(comic)
-            },
-            onOpenBookmark = { comic, page ->
-                comicsInFolder = listOf(comic)
-                selectedComic = comic
-                pendingPage = page
-                previousScreen = Screen.Home
-                currentScreen = Screen.Reader(comic)
-            }
-        )
+            )
 
-        is Screen.Directory -> FileBrowserScreen(
-            startPath = screen.path,
-            favoriteFolders = folders.map { it.path },
-            onBack = { currentScreen = previousScreen },
-            onOpenComic = { comic ->
-                comicsInFolder = listOf(comic)
-                selectedComic = comic
-                pendingPage = -1
-                previousScreen = Screen.Directory(screen.path)
-                currentScreen = Screen.Reader(comic)
-            },
-            onToggleFavorite = { path ->
-                scope.launch {
-                    val name = java.io.File(path).name.ifEmpty { path }
-                    folderManager.addFolder(path, name)
+            is Screen.Directory -> {
+                BackHandler(enabled = true) { currentScreen = previousScreen }
+                FileBrowserScreen(
+                    startPath = screen.path,
+                    favoriteFolders = folders.map { it.path },
+                    onBack = { currentScreen = previousScreen },
+                    onOpenComic = { comic ->
+                        comicsInFolder = listOf(comic)
+                        selectedComic = comic
+                        pendingPage = -1
+                        previousScreen = Screen.Directory(screen.path)
+                        currentScreen = Screen.Reader(comic)
+                    },
+                    onToggleFavorite = { path ->
+                        scope.launch {
+                            val name = java.io.File(path).name.ifEmpty { path }
+                            folderManager.addFolder(path, name)
+                        }
+                    }
+                )
+            }
+
+            is Screen.Library -> {
+                BackHandler(enabled = true) { currentScreen = previousScreen }
+                LibraryScreen(
+                    folderPath = screen.folder.path,
+                    folderName = screen.folder.name,
+                    onBack = { currentScreen = previousScreen },
+                    onComicClick = { comic, allComics ->
+                        comicsInFolder = allComics
+                        selectedComic = comic
+                        pendingPage = -1
+                        previousScreen = Screen.Library(screen.folder)
+                        currentScreen = Screen.Reader(comic)
+                    }
+                )
+            }
+
+            is Screen.Reader -> com.mangauniversal.app.ui.reader.ReaderScreen(
+                comic = screen.comic,
+                comicsList = comicsInFolder.ifEmpty { listOf(screen.comic) },
+                initialPageOverride = pendingPage,
+                onBack = {
+                    pendingPage = -1
+                    currentScreen = previousScreen
+                },
+                onOpenComic = { newComic ->
+                    selectedComic = newComic
+                    comicsInFolder = listOf(newComic)
+                    pendingPage = -1
+                    currentScreen = Screen.Reader(newComic)
                 }
-            }
-        )
+            )
 
-        is Screen.Library -> LibraryScreen(
-            folderPath = screen.folder.path,
-            folderName = screen.folder.name,
-            onBack = { currentScreen = previousScreen },
-            onComicClick = { comic, allComics ->
-                comicsInFolder = allComics
-                selectedComic = comic
-                pendingPage = -1
-                previousScreen = Screen.Library(screen.folder)
-                currentScreen = Screen.Reader(comic)
+            is Screen.History -> {
+                BackHandler(enabled = true) { currentScreen = previousScreen }
+                com.mangauniversal.app.ui.history.HistoryScreen(
+                    onBack = { currentScreen = previousScreen },
+                    onOpenComic = { comic, list ->
+                        comicsInFolder = list
+                        selectedComic = comic
+                        pendingPage = -1
+                        previousScreen = Screen.History
+                        currentScreen = Screen.Reader(comic)
+                    }
+                )
             }
-        )
 
-        is Screen.Reader -> com.mangauniversal.app.ui.reader.ReaderScreen(
-            comic = screen.comic,
-            comicsList = comicsInFolder.ifEmpty { listOf(screen.comic) },
-            initialPageOverride = pendingPage,
-            onBack = {
-                pendingPage = -1
-                currentScreen = previousScreen
-            },
-            onOpenComic = { newComic ->
-                selectedComic = newComic
-                comicsInFolder = listOf(newComic)
-                pendingPage = -1
-                currentScreen = Screen.Reader(newComic)
-            }
-        )
-
-        is Screen.History -> com.mangauniversal.app.ui.history.HistoryScreen(
-            onBack = { currentScreen = previousScreen },
-            onOpenComic = { comic, list ->
-                comicsInFolder = list
-                selectedComic = comic
-                pendingPage = -1
-                previousScreen = Screen.History
-                currentScreen = Screen.Reader(comic)
-            }
-        )
-
-        is Screen.Settings -> SettingsScreen(
-            onBack = { currentScreen = previousScreen }
-        )
+            is Screen.Settings -> SettingsScreen(
+                onBack = { currentScreen = previousScreen }
+            )
+        }
+        
+        // CAPA DE BRILLO
+        if (appSettings.brightness < 1f && currentScreen !is Screen.Reader) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = (1f - appSettings.brightness) * 0.7f))
+            )
+        }
+        
+        // CAPA DE FILTRO LUZ AZUL
+        if (appSettings.blueLightFilter > 0f && currentScreen !is Screen.Reader) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFFFF9800).copy(alpha = appSettings.blueLightFilter * 0.3f))
+            )
+        }
     }
 }
 
@@ -480,7 +527,7 @@ private fun RowScope.TabItem(label: String, selected: Boolean, onClick: () -> Un
         Text(
             text = label,
             color = if (selected) Color.White else Color.White.copy(alpha = 0.6f),
-            fontSize = 14.sp,
+                        fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
         )
         if (selected) {
@@ -551,7 +598,7 @@ fun DirectoryTab(
         )
         Spacer(Modifier.height(16.dp))
         Text("Directorio", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             "Explora tus carpetas de cómics",
             color = Color.White.copy(alpha = 0.6f),
