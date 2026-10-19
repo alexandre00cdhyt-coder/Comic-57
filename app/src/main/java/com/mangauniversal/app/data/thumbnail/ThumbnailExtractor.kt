@@ -11,6 +11,8 @@ import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
 import com.mangauniversal.app.domain.util.NaturalOrderComparator
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -30,47 +32,49 @@ class ThumbnailExtractor(private val context: Context) {
 
     private val naturalComparator = NaturalOrderComparator()
     private val thumbnailWidth = 400
+    
+    // Semáforo para evitar OOM (máximo 2 procesamientos a la vez)
+    private val semaphore = Semaphore(2)
 
     suspend fun getThumbnail(comic: Comic): File? = withContext(Dispatchers.IO) {
-        try {
-            val outFile = File(thumbsDir, "${hashId(comic.id)}.jpg")
+        semaphore.withPermit {
+            try {
+                val outFile = File(thumbsDir, "${hashId(comic.id)}.jpg")
 
-            if (outFile.exists() && outFile.length() > 0) {
-                return@withContext outFile
+                if (outFile.exists() && outFile.length() > 0) {
+                    return@withPermit outFile
+                }
+
+                val extracted: Bitmap? = when (comic.type) {
+                    ComicType.FOLDER -> extractFromFolder(comic)
+                    ComicType.CBZ, ComicType.ZIP -> extractFromZip(comic)
+                    ComicType.PDF -> extractFromPdf(comic)
+                    ComicType.CBR, ComicType.RAR -> extractFromRar(comic)
+                    else -> null
+                }
+
+                if (extracted == null) return@withPermit null
+
+                FileOutputStream(outFile).use { out ->
+                    extracted.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                }
+                extracted.recycle()
+
+                if (outFile.exists() && outFile.length() > 0) outFile else null
+            } catch (e: OutOfMemoryError) {
+                Log.e("ThumbnailExtractor", "OOM en ${comic.path}")
+                null
+            } catch (e: Exception) {
+                Log.e("ThumbnailExtractor", "Error en ${comic.path}", e)
+                null
             }
-
-            val extracted: Bitmap? = when (comic.type) {
-                ComicType.FOLDER -> extractFromFolder(comic)
-                ComicType.CBZ, ComicType.ZIP -> extractFromZip(comic)
-                ComicType.PDF -> extractFromPdf(comic)
-                ComicType.CBR, ComicType.RAR -> extractFromRar(comic)
-                else -> null
-            }
-
-            if (extracted == null) return@withContext null
-
-            FileOutputStream(outFile).use { out ->
-                extracted.compress(Bitmap.CompressFormat.JPEG, 80, out)
-            }
-            extracted.recycle()
-
-            if (outFile.exists() && outFile.length() > 0) outFile else null
-        } catch (e: OutOfMemoryError) {
-            Log.e("ThumbnailExtractor", "OOM en ${comic.path}")
-            null
-        } catch (e: Exception) {
-            Log.e("ThumbnailExtractor", "Error en ${comic.path}", e)
-            null
         }
     }
 
     private fun decodeSampledBitmap(file: File, reqWidth: Int): Bitmap? {
         return try {
-            val options = BitmapFactory.Options().apply {
-                inJustDecodeBounds = true
-            }
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.absolutePath, options)
-
             if (options.outWidth <= 0 || options.outHeight <= 0) return null
 
             var sampleSize = 1
@@ -84,7 +88,6 @@ class ThumbnailExtractor(private val context: Context) {
             }
             BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
         } catch (e: OutOfMemoryError) {
-            Log.e("ThumbnailExtractor", "OOM decodificando ${file.name}")
             null
         } catch (e: Exception) {
             null
@@ -94,9 +97,7 @@ class ThumbnailExtractor(private val context: Context) {
     private fun decodeSampledBitmap(input: java.io.InputStream, reqWidth: Int): Bitmap? {
         return try {
             val bytes = input.readBytes()
-            val options = BitmapFactory.Options().apply {
-                inJustDecodeBounds = true
-            }
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
             if (options.outWidth <= 0) return null
 
@@ -141,7 +142,12 @@ class ThumbnailExtractor(private val context: Context) {
 
     private fun extractFromRar(comic: Comic): Bitmap? {
         val file = File(comic.path)
-        val temp = File(context.cacheDir, "temp_thumb_${hashId(comic.id)}.img")
+        // Si el archivo es mayor a 200MB, no intentar leer la portada para no colapsar la RAM
+        if (file.length() > 200L * 1024L * 1024L) {
+            Log.w("ThumbnailExtractor", "RAR muy grande, omitiendo portada")
+            return null
+        }
+
         var randomAccessFile: RandomAccessFile? = null
         var archive: net.sf.sevenzipjbinding.IInArchive? = null
 
@@ -154,36 +160,38 @@ class ThumbnailExtractor(private val context: Context) {
                 ?.minWithOrNull { a, b -> naturalComparator.compare(a.path, b.path) }
                 ?: return null
 
-            temp.delete()
-            val out = FileOutputStream(temp)
-            val result = try {
-                item.extractSlow(object : ISequentialOutStream {
-                    override fun write(data: ByteArray): Int {
-                        return try {
-                            out.write(data)
-                            data.size
-                        } catch (e: Exception) {
-                            0
-                        }
-                    }
-                })
-            } finally {
-                out.close()
-            }
+            // En lugar de escribir a un archivo temporal (lento), guardamos en memoria
+            var bytes: ByteArray? = null
+            var totalSize = 0
+            val result = item.extractSlow(object : ISequentialOutStream {
+                override fun write(data: ByteArray): Int {
+                    if (bytes == null) bytes = data.clone() else bytes = bytes!! + data
+                    totalSize += data.size
+                    // Si supera 15MB, abortar para no colapsar memoria
+                    if (totalSize > 15 * 1024 * 1024) return 0
+                    return data.size
+                }
+            })
 
-            if (result != ExtractOperationResult.OK) {
-                temp.delete()
-                return null
+            if (result == ExtractOperationResult.OK && bytes != null) {
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes!!.size, options)
+                
+                var sampleSize = 1
+                while (options.outWidth / (sampleSize * 2) >= thumbnailWidth) {
+                    sampleSize *= 2
+                }
+                val decodeOptions = BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                }
+                return BitmapFactory.decodeByteArray(bytes, 0, bytes!!.size, decodeOptions)
             }
-
-            val bmp = decodeSampledBitmap(temp, thumbnailWidth)
-            temp.delete()
-            return bmp
+            return null
         } catch (e: OutOfMemoryError) {
-            temp.delete()
+            Log.e("ThumbnailExtractor", "OOM leyendo RAR")
             return null
         } catch (e: Exception) {
-            temp.delete()
             return null
         } finally {
             try { archive?.close() } catch (e: Exception) { }
