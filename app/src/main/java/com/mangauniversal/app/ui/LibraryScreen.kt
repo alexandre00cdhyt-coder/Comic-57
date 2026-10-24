@@ -23,16 +23,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.mangauniversal.app.data.files.FileOperations
 import com.mangauniversal.app.data.model.Comic
 import com.mangauniversal.app.data.model.ComicType
 import com.mangauniversal.app.data.scanner.ComicScanner
@@ -83,26 +91,38 @@ fun LibraryScreen(
     var searchVisible by remember { mutableStateOf(false) }
     var sortAscending by remember { mutableStateOf(true) }
 
+    // Estados para diálogos de gestión de archivos
+    var fileToDelete by remember { mutableStateOf<File?>(null) }
+    var fileToRename by remember { mutableStateOf<File?>(null) }
+    var renameText by remember { mutableStateOf("") }
+
+    // Función para recargar la vista actual
+    fun reloadCurrentFolder() {
+        scope.launch {
+            isLoading = true
+            withContext(Dispatchers.IO) {
+                val folder = File(currentPath)
+                subfolders = try {
+                    folder.listFiles()
+                        ?.filter { it.isDirectory && !it.name.startsWith(".") && it.canRead() }
+                        ?.sortedBy { it.name.lowercase() }
+                        ?: emptyList()
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                comics = ComicScanner(context).scanFolder(currentPath)
+            }
+            isLoading = false
+        }
+    }
+
     LaunchedEffect(Unit) {
         val saved = prefs.getViewMode()
         if (saved != null) viewMode = saved
     }
 
     LaunchedEffect(currentPath) {
-        isLoading = true
-        withContext(Dispatchers.IO) {
-            val folder = File(currentPath)
-            subfolders = try {
-                folder.listFiles()
-                    ?.filter { it.isDirectory && !it.name.startsWith(".") && it.canRead() }
-                    ?.sortedBy { it.name.lowercase() }
-                    ?: emptyList()
-            } catch (e: Exception) {
-                emptyList()
-            }
-            comics = ComicScanner(context).scanFolder(currentPath)
-        }
-        isLoading = false
+        reloadCurrentFolder()
     }
 
     val displayedComics = remember(comics, searchQuery, sortAscending) {
@@ -117,6 +137,70 @@ fun LibraryScreen(
     val parentDir = currentDir.parentFile
     val isRootFolder = currentPath == folderPath
     val canGoUp = !isRootFolder && parentDir != null
+
+    // --- DIÁLOGOS ---
+    if (fileToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text("Eliminar", color = Color.White) },
+            text = { Text("¿Seguro que deseas eliminar '${fileToDelete!!.name}'?", color = Color.White.copy(alpha = 0.8f)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val f = fileToDelete!!
+                    fileToDelete = null
+                    scope.launch {
+                        FileOperations.delete(f)
+                        reloadCurrentFolder()
+                    }
+                }) {
+                    Text("Eliminar", color = Color(0xFFFF5555))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToDelete = null }) {
+                    Text("Cancelar", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF1A1A1A)
+        )
+    }
+
+    if (fileToRename != null) {
+        AlertDialog(
+            onDismissRequest = { fileToRename = null },
+            title = { Text("Renombrar", color = Color.White) },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Color.White),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val f = fileToRename!!
+                    val newName = renameText
+                    fileToRename = null
+                    if (newName.isNotBlank() && newName != f.name) {
+                        scope.launch {
+                            FileOperations.rename(f, newName)
+                            reloadCurrentFolder()
+                        }
+                    }
+                }) {
+                    Text("Guardar", color = Color(0xFFFF6B00))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToRename = null }) {
+                    Text("Cancelar", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF1A1A1A)
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -283,7 +367,12 @@ fun LibraryScreen(
                                 )
                             }
                             items(subfolders, key = { it.absolutePath }) { dir ->
-                                FolderRow(dir) { currentPath = dir.absolutePath }
+                                FolderRow(
+                                    dir = dir,
+                                    onOpen = { currentPath = dir.absolutePath },
+                                    onDelete = { fileToDelete = dir },
+                                    onRename = { fileToRename = dir; renameText = dir.name }
+                                )
                             }
                         }
                         if (displayedComics.isNotEmpty()) {
@@ -297,13 +386,18 @@ fun LibraryScreen(
                             }
                             items(displayedComics, key = { it.id }) { comic ->
                                 Row(Modifier.clickable { onComicClick(comic, displayedComics) }) {
-                                    ComicRowWithThumbnail(comic, thumbnailExtractor)
+                                    ComicRowWithThumbnail(
+                                        comic = comic,
+                                        extractor = thumbnailExtractor,
+                                        onDelete = { fileToDelete = File(comic.path) },
+                                        onRename = { fileToRename = File(comic.path); renameText = File(comic.path).name }
+                                    )
                                 }
                             }
                         }
                         item { Spacer(Modifier.height(20.dp)) }
                     }
-
+                    
                     ViewMode.LIST_COMPACT -> LazyColumn(
                         modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -311,12 +405,21 @@ fun LibraryScreen(
                         item { Spacer(Modifier.height(4.dp)) }
                         if (subfolders.isNotEmpty()) {
                             items(subfolders, key = { it.absolutePath }) { dir ->
-                                FolderRow(dir) { currentPath = dir.absolutePath }
+                                FolderRow(
+                                    dir = dir,
+                                    onOpen = { currentPath = dir.absolutePath },
+                                    onDelete = { fileToDelete = dir },
+                                    onRename = { fileToRename = dir; renameText = dir.name }
+                                )
                             }
                         }
                         items(displayedComics, key = { it.id }) { comic ->
                             Row(Modifier.clickable { onComicClick(comic, displayedComics) }) {
-                                ComicRowCompact(comic)
+                                ComicRowCompact(
+                                    comic = comic,
+                                    onDelete = { fileToDelete = File(comic.path) },
+                                    onRename = { fileToRename = File(comic.path); renameText = File(comic.path).name }
+                                )
                             }
                         }
                         item { Spacer(Modifier.height(20.dp)) }
@@ -331,23 +434,38 @@ fun LibraryScreen(
                         item { Spacer(Modifier.height(4.dp)) }
                         if (subfolders.isNotEmpty()) {
                             items(subfolders, key = { it.absolutePath }) { dir ->
-                                FolderGridItem(dir) { currentPath = dir.absolutePath }
+                                FolderGridItem(
+                                    dir = dir,
+                                    onOpen = { currentPath = dir.absolutePath },
+                                    onDelete = { fileToDelete = dir },
+                                    onRename = { fileToRename = dir; renameText = dir.name }
+                                )
                             }
                         }
                         items(displayedComics, key = { it.id }) { comic ->
                             Row(Modifier.clickable { onComicClick(comic, displayedComics) }) {
-                                ComicGridItem(comic, thumbnailExtractor)
+                                ComicGridItem(
+                                    comic = comic,
+                                    extractor = thumbnailExtractor,
+                                    onDelete = { fileToDelete = File(comic.path) },
+                                    onRename = { fileToRename = File(comic.path); renameText = File(comic.path).name }
+                                )
                             }
                         }
                         item { Spacer(Modifier.height(20.dp)) }
                     }
 
-                    else -> LazyColumn(
+                                        else -> LazyColumn(
                         modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
                     ) {
                         items(displayedComics, key = { it.id }) { comic ->
                             Row(Modifier.clickable { onComicClick(comic, displayedComics) }) {
-                                ComicRowWithThumbnail(comic, thumbnailExtractor)
+                                ComicRowWithThumbnail(
+                                    comic = comic,
+                                    extractor = thumbnailExtractor,
+                                    onDelete = { fileToDelete = File(comic.path) },
+                                    onRename = { fileToRename = File(comic.path); renameText = File(comic.path).name }
+                                )
                             }
                         }
                     }
@@ -358,7 +476,33 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun FolderRow(dir: File, onClick: () -> Unit) {
+private fun FileOptionsMenu(onDelete: () -> Unit, onRename: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Opciones", tint = Color.White.copy(alpha = 0.5f))
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(Color(0xFF2A2A2A))
+        ) {
+            DropdownMenuItem(
+                text = { Text("Renombrar", color = Color.White) },
+                onClick = { expanded = false; onRename() },
+                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White) }
+            )
+            DropdownMenuItem(
+                text = { Text("Eliminar", color = Color(0xFFFF5555)) },
+                onClick = { expanded = false; onDelete() },
+                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5555)) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun FolderRow(dir: File, onOpen: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit) {
     val count = remember(dir.absolutePath) {
         try { dir.listFiles()?.size ?: 0 } catch (e: Exception) { 0 }
     }
@@ -367,8 +511,8 @@ private fun FolderRow(dir: File, onClick: () -> Unit) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF1A1A1A))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .clickable(onClick = onOpen)
+            .padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text("📁", fontSize = 22.sp, modifier = Modifier.width(32.dp))
@@ -390,17 +534,18 @@ private fun FolderRow(dir: File, onClick: () -> Unit) {
                 )
             }
         }
+        FileOptionsMenu(onDelete = onDelete, onRename = onRename)
     }
 }
 
 @Composable
-private fun FolderGridItem(dir: File, onClick: () -> Unit) {
+private fun FolderGridItem(dir: File, onOpen: () -> Unit, onDelete: () -> Unit, onRename: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF1A1A1A))
-            .clickable(onClick = onClick)
+            .clickable(onClick = onOpen)
             .padding(8.dp)
     ) {
         Box(
@@ -412,6 +557,9 @@ private fun FolderGridItem(dir: File, onClick: () -> Unit) {
             contentAlignment = Alignment.Center
         ) {
             Text("📁", fontSize = 48.sp)
+            Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                FileOptionsMenu(onDelete = onDelete, onRename = onRename)
+            }
         }
         Spacer(Modifier.height(6.dp))
         Text(
@@ -426,14 +574,20 @@ private fun FolderGridItem(dir: File, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ComicRowWithThumbnail(comic: Comic, extractor: ThumbnailExtractor) {
+private fun ComicRowWithThumbnail(comic: Comic, extractor: ThumbnailExtractor, onDelete: () -> Unit, onRename: () -> Unit) {
     var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(comic.id) {
-        thumbPath = if (comic.type == ComicType.FOLDER && comic.coverPath != null) {
-            comic.coverPath
-        } else {
-            extractor.getThumbnail(comic)?.absolutePath
+        thumbPath = when {
+            comic.type == ComicType.FOLDER && comic.coverPath != null -> comic.coverPath
+            comic.type == ComicType.CBZ || comic.type == ComicType.ZIP -> {
+                try {
+                    extractor.getThumbnail(comic)?.absolutePath
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            else -> null
         }
     }
 
@@ -442,7 +596,7 @@ private fun ComicRowWithThumbnail(comic: Comic, extractor: ThumbnailExtractor) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF1A1A1A))
-            .padding(10.dp),
+            .padding(start = 10.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -480,17 +634,18 @@ private fun ComicRowWithThumbnail(comic: Comic, extractor: ThumbnailExtractor) {
                 fontSize = 11.sp
             )
         }
+        FileOptionsMenu(onDelete = onDelete, onRename = onRename)
     }
 }
 
 @Composable
-private fun ComicRowCompact(comic: Comic) {
+private fun ComicRowCompact(comic: Comic, onDelete: () -> Unit, onRename: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
             .background(Color(0xFF1A1A1A))
-            .padding(horizontal = 10.dp, vertical = 10.dp),
+            .padding(start = 10.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(text = iconFor(comic.type), fontSize = 18.sp, modifier = Modifier.width(28.dp))
@@ -499,22 +654,29 @@ private fun ComicRowCompact(comic: Comic) {
             text = comic.title,
             color = Color.White,
             fontSize = 13.sp,
-                        maxLines = 1,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
+        FileOptionsMenu(onDelete = onDelete, onRename = onRename)
     }
 }
 
 @Composable
-private fun ComicGridItem(comic: Comic, extractor: ThumbnailExtractor) {
+private fun ComicGridItem(comic: Comic, extractor: ThumbnailExtractor, onDelete: () -> Unit, onRename: () -> Unit) {
     var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(comic.id) {
-        thumbPath = if (comic.type == ComicType.FOLDER && comic.coverPath != null) {
-            comic.coverPath
-        } else {
-            extractor.getThumbnail(comic)?.absolutePath
+        thumbPath = when {
+            comic.type == ComicType.FOLDER && comic.coverPath != null -> comic.coverPath
+            comic.type == ComicType.CBZ || comic.type == ComicType.ZIP -> {
+                try {
+                    extractor.getThumbnail(comic)?.absolutePath
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            else -> null
         }
     }
 
@@ -542,6 +704,9 @@ private fun ComicGridItem(comic: Comic, extractor: ThumbnailExtractor) {
                 )
             } else {
                 Text(text = iconFor(comic.type), fontSize = 40.sp)
+            }
+            Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                FileOptionsMenu(onDelete = onDelete, onRename = onRename)
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -576,4 +741,4 @@ private fun formatSize(bytes: Long): String {
         else -> "${bytes / (1024L * 1024L * 1024L)} GB"
     }
 }
-            
+        
