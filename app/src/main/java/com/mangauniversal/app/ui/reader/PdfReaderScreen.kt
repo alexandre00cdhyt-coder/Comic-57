@@ -5,10 +5,14 @@ package com.mangauniversal.app.ui.reader
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -53,8 +58,54 @@ fun PdfReaderScreen(
 ) {
     if (pageCount <= 0) return
 
+    if (readerMode == ReaderMode.VERTICAL) {
+        PdfReaderVertical(
+            pdfFile = pdfFile,
+            pageCount = pageCount,
+            extractor = extractor,
+            fitMode = fitMode,
+            initialPage = initialPage,
+            pendingPage = pendingPage,
+            isLastComic = isLastComic,
+            onPageChanged = onPageChanged,
+            onCenterTap = onCenterTap,
+            onNextComic = onNextComic,
+            onPendingPageConsumed = onPendingPageConsumed
+        )
+    } else {
+        PdfReaderHorizontal(
+            pdfFile = pdfFile,
+            pageCount = pageCount,
+            extractor = extractor,
+            fitMode = fitMode,
+            reverse = readerMode == ReaderMode.LEFT,
+            initialPage = initialPage,
+            pendingPage = pendingPage,
+            isLastComic = isLastComic,
+            onPageChanged = onPageChanged,
+            onCenterTap = onCenterTap,
+            onNextComic = onNextComic,
+            onPendingPageConsumed = onPendingPageConsumed
+        )
+    }
+}
+
+@Composable
+private fun PdfReaderHorizontal(
+    pdfFile: File,
+    pageCount: Int,
+    extractor: PageExtractor,
+    fitMode: ImageFitMode,
+    reverse: Boolean,
+    initialPage: Int,
+    pendingPage: Int,
+    isLastComic: Boolean,
+    onPageChanged: (Int) -> Unit,
+    onCenterTap: () -> Unit,
+    onNextComic: () -> Unit,
+    onPendingPageConsumed: () -> Unit
+) {
     val safeInitial = if (initialPage < 0) 0 else initialPage.coerceIn(0, pageCount - 1)
-    val reverse = readerMode == ReaderMode.LEFT
     val pagerInitial = if (reverse) pageCount - 1 - safeInitial else safeInitial
 
     val pagerState = rememberPagerState(
@@ -91,7 +142,7 @@ fun PdfReaderScreen(
             modifier = Modifier.fillMaxSize()
         ) { page ->
             val realIdx = pagerToReal(page)
-            PdfPage(
+            ZoomablePdfPage(
                 pdfFile = pdfFile,
                 pageIndex = realIdx,
                 extractor = extractor,
@@ -112,19 +163,86 @@ fun PdfReaderScreen(
                     .clickable { onNextComic() },
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "→",
-                    fontSize = 28.sp,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
+                Text(text = "→", fontSize = 28.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+@Composable
+private fun PdfReaderVertical(
+    pdfFile: File,
+    pageCount: Int,
+    extractor: PageExtractor,
+    fitMode: ImageFitMode,
+    initialPage: Int,
+    pendingPage: Int,
+    isLastComic: Boolean,
+    onPageChanged: (Int) -> Unit,
+    onCenterTap: () -> Unit,
+    onNextComic: () -> Unit,
+    onPendingPageConsumed: () -> Unit
+) {
+    val safeInitial = if (initialPage < 0) 0 else initialPage.coerceIn(0, pageCount - 1)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = safeInitial)
+
+    LaunchedEffect(listState.firstVisibleItemIndex) {
+        onPageChanged(listState.firstVisibleItemIndex)
+    }
+
+    LaunchedEffect(pendingPage) {
+        if (pendingPage >= 0 && pendingPage < pageCount) {
+            if (listState.firstVisibleItemIndex != pendingPage) {
+                listState.scrollToItem(pendingPage)
+            }
+            onPendingPageConsumed()
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            items(pageCount) { index ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { onCenterTap() })
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    ZoomablePdfPage(
+                        pdfFile = pdfFile,
+                        pageIndex = index,
+                        extractor = extractor,
+                        contentScale = ContentScale.FillWidth,
+                        onTap = onCenterTap
+                    )
+                }
+            }
+        }
+
+        val isAtEnd = listState.firstVisibleItemIndex >= pageCount - 3
+        if (isAtEnd && !isLastComic) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 60.dp, end = 20.dp)
+                    .size(56.dp)
+                    .background(Color(0xCCFF6B00), shape = CircleShape)
+                    .clickable { onNextComic() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "→", fontSize = 28.sp, color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
 
 @Composable
-private fun PdfPage(
+private fun ZoomablePdfPage(
     pdfFile: File,
     pageIndex: Int,
     extractor: PageExtractor,
@@ -147,31 +265,26 @@ private fun PdfPage(
         isLoading = false
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .clickable(onClick = onTap),
-        contentAlignment = Alignment.Center
-    ) {
-        if (isLoading) {
+    if (isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
             CircularProgressIndicator(color = Color(0xFFFF6B00))
-        } else if (renderedFile != null) {
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(renderedFile)
-                    .crossfade(false)
-                    .build(),
-                contentDescription = null,
-                contentScale = contentScale,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
-            Text(
-                text = "Error al cargar página ${pageIndex + 1}",
-                color = Color.White,
-                fontSize = 14.sp
-            )
+        }
+    } else if (renderedFile != null) {
+        ZoomablePage(
+            file = renderedFile,
+            pageKey = pageIndex,
+            contentScale = contentScale,
+            onTap = { zone -> if (zone == TapZone.Center) onTap() }
+        )
+    } else {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Error al cargar página ${pageIndex + 1}", color = Color.White, fontSize = 14.sp)
         }
     }
 }
