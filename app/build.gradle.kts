@@ -1,36 +1,85 @@
-name: Build APK
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+}
 
-on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+android {
+    namespace = "com.mangauniversal.app"
+    compileSdk = 34
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+    defaultConfig {
+        applicationId = "com.mangauniversal.app"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary = true
+        }
+    }
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a") // Solo este, para tu Honor y Motorola
+            isUniversalApk = false
+        }
+    }
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.6'
-          cache-read-only: false
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.11"
+    }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+dependencies {
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
+    implementation(libs.androidx.navigation.compose)
 
-      - name: Upload APK (Solo arm64)
-        uses: actions/upload-artifact@v4
-        with:
-          name: MangaUniversal-APK
-          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-          retention-days: 3
+    implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
+
+    implementation(libs.sevenzipjbinding)
+    implementation(libs.sevenzipjbinding.all)
+
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.kotlinx.coroutines.android)
+
+    debugImplementation(libs.androidx.ui.tooling)
+}
