@@ -90,7 +90,6 @@ fun PdfReaderScreen(
         )
     }
 }
-
 @Composable
 private fun PdfReaderHorizontal(
     pdfFile: File,
@@ -169,6 +168,7 @@ private fun PdfReaderHorizontal(
         }
     }
 }
+
 @Composable
 private fun PdfReaderVertical(
     pdfFile: File,
