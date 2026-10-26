@@ -86,7 +86,7 @@ fun ReaderScreen(
     val pageExtractor = remember { PageExtractor(context) }
 
     var pages by remember { mutableStateOf<List<File>?>(null) }
-    var pdfFile by remember { mutableStateOf<File?>(null) } // Para PDFs
+    var pdfFile by remember { mutableStateOf<File?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var fitMode by remember { mutableStateOf(ImageFitMode.FIT_WIDTH) }
@@ -168,7 +168,6 @@ fun ReaderScreen(
                 pdfFile = file
                 val count = pageExtractor.getPdfPageCount(file)
                 if (count > 0) {
-                    // Generamos una lista ficticia con la cantidad de páginas
                     pages = List(count) { File(comic.path) }
                     pagesLoaded = true
                 } else {
@@ -211,7 +210,7 @@ fun ReaderScreen(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     TextField(
                         value = bookmarkNote,
                         onValueChange = { bookmarkNote = it },
@@ -267,8 +266,7 @@ fun ReaderScreen(
             containerColor = Color(0xFF1A1A1A)
         )
     }
-
-    Box(
+        Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
@@ -296,7 +294,6 @@ fun ReaderScreen(
             }
             pages != null -> {
                 if (comic.type == ComicType.PDF && pdfFile != null) {
-                    // LECTOR DE PDF NATIVO (Al vuelo)
                     PdfReaderScreen(
                         pdfFile = pdfFile!!,
                         pageCount = pages!!.size,
@@ -349,7 +346,6 @@ fun ReaderScreen(
         }
 
         if (isSliding && pages != null && sliderPage in pages!!.indices) {
-            // La previsualización del slider en PDFs puede ser costosa, así que la mostramos simple.
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -479,7 +475,11 @@ fun ReaderScreen(
                     onValueChange = { newValue ->
                         isSliding = true
                         sliderPage = newValue.toInt()
-                                            isSliding = false
+                    },
+                    onValueChangeFinished = {
+                        currentPage = sliderPage
+                        pendingPage = sliderPage
+                        isSliding = false
                     },
                     valueRange = 0f..(totalPages - 1).toFloat().coerceAtLeast(1f),
                     modifier = Modifier.weight(1f).height(24.dp),
