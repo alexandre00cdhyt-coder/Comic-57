@@ -391,3 +391,187 @@ fun LibraryScreen(
         }
     }
 }
+@Composable
+private fun FileOptionsMenu(
+    onDelete: () -> Unit, 
+    onRename: () -> Unit, 
+    onMove: () -> Unit,
+    onCopy: () -> Unit,
+    onCut: () -> Unit,
+    onExtract: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Opciones", tint = Color.White.copy(alpha = 0.5f))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.background(Color(0xFF2A2A2A))) {
+            DropdownMenuItem(text = { Text("Copiar", color = Color.White) }, onClick = { expanded = false; onCopy() }, leadingIcon = { Icon(Icons.Default.List, contentDescription = null, tint = Color.White) })
+            DropdownMenuItem(text = { Text("Cortar", color = Color.White) }, onClick = { expanded = false; onCut() }, leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White) })
+            DropdownMenuItem(text = { Text("Mover a...", color = Color.White) }, onClick = { expanded = false; onMove() }, leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null, tint = Color.White) })
+            DropdownMenuItem(text = { Text("Renombrar", color = Color.White) }, onClick = { expanded = false; onRename() }, leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White) })
+            DropdownMenuItem(text = { Text("Extraer imágenes", color = Color.White) }, onClick = { expanded = false; onExtract() }, leadingIcon = { Icon(Icons.Default.List, contentDescription = null, tint = Color.White) })
+            DropdownMenuItem(text = { Text("Eliminar", color = Color(0xFFFF5555)) }, onClick = { expanded = false; onDelete() }, leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5555)) })
+        }
+    }
+}
+
+@Composable
+private fun FolderRow(
+    dir: File, 
+    onOpen: () -> Unit, 
+    onDelete: () -> Unit, 
+    onRename: () -> Unit, 
+    onMove: () -> Unit
+) {
+    val count = remember(dir.absolutePath) { try { dir.listFiles()?.size ?: 0 } catch (e: Exception) { 0 } }
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF1A1A1A).copy(alpha = 0.9f)).clickable(onClick = onOpen).padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("📁", fontSize = 22.sp, modifier = Modifier.width(32.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = dir.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (count > 0) Text(text = "$count elementos", color = Color.White.copy(alpha = 0.45f), fontSize = 11.sp)
+        }
+        FileOptionsMenu(
+            onDelete = onDelete, 
+            onRename = onRename, 
+            onMove = onMove, 
+            onCopy = { }, 
+            onCut = { }, 
+            onExtract = { }
+        )
+    }
+}
+
+@Composable
+private fun FolderGridItem(
+    dir: File, 
+    onOpen: () -> Unit, 
+    onDelete: () -> Unit, 
+    onRename: () -> Unit, 
+    onMove: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF1A1A1A).copy(alpha = 0.9f)).clickable(onClick = onOpen).padding(8.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(4.dp)).background(Color(0xFF2A2A2A).copy(alpha = 0.9f)), contentAlignment = Alignment.Center) {
+            Text("📁", fontSize = 48.sp)
+            Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                FileOptionsMenu(
+                    onDelete = onDelete, 
+                    onRename = onRename, 
+                    onMove = onMove, 
+                    onCopy = { }, 
+                    onCut = { }, 
+                    onExtract = { }
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(text = dir.name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun ComicRowWithThumbnail(
+    comic: Comic, 
+    extractor: ThumbnailExtractor, 
+    onDelete: () -> Unit, 
+    onRename: () -> Unit, 
+    onMove: () -> Unit,
+    onCopy: () -> Unit, 
+    onCut: () -> Unit,
+    onExtract: () -> Unit
+) {
+    var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(comic.id) {
+        thumbPath = when {
+            comic.type == ComicType.FOLDER && comic.coverPath != null -> comic.coverPath
+            comic.type == ComicType.CBZ || comic.type == ComicType.ZIP -> { try { extractor.getThumbnail(comic)?.absolutePath } catch (e: Exception) { null } }
+            else -> null
+        }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF1A1A1A).copy(alpha = 0.9f)).padding(start = 10.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(modifier = Modifier.size(56.dp, 76.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF2A2A2A)), contentAlignment = Alignment.Center) {
+            if (thumbPath != null) AsyncImage(model = thumbPath, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            else Text(text = iconFor(comic.type), fontSize = 28.sp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = comic.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(4.dp))
+            Text(text = "${comic.type} · ${formatSize(comic.sizeBytes)}", color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
+        }
+        FileOptionsMenu(
+            onDelete = onDelete, 
+            onRename = onRename, 
+            onMove = onMove, 
+            onCopy = onCopy, 
+            onCut = onCut, 
+            onExtract = onExtract
+        )
+    }
+}
+
+@Composable
+private fun ComicGridItem(
+    comic: Comic, 
+    extractor: ThumbnailExtractor, 
+    onDelete: () -> Unit, 
+    onRename: () -> Unit, 
+    onMove: () -> Unit,
+    onCopy: () -> Unit, 
+    onCut: () -> Unit,
+    onExtract: () -> Unit
+) {
+    var thumbPath by remember(comic.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(comic.id) {
+        thumbPath = when {
+            comic.type == ComicType.FOLDER && comic.coverPath != null -> comic.coverPath
+            comic.type == ComicType.CBZ || comic.type == ComicType.ZIP -> { try { extractor.getThumbnail(comic)?.absolutePath } catch (e: Exception) { null } }
+            else -> null
+        }
+    }
+    Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color(0xFF1A1A1A).copy(alpha = 0.9f)).padding(6.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(4.dp)).background(Color(0xFF2A2A2A)), contentAlignment = Alignment.Center) {
+            if (thumbPath != null) AsyncImage(model = thumbPath, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            else Text(text = iconFor(comic.type), fontSize = 40.sp)
+            Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                FileOptionsMenu(
+                    onDelete = onDelete, 
+                    onRename = onRename, 
+                    onMove = onMove, 
+                    onCopy = onCopy, 
+                    onCut = onCut, 
+                    onExtract = onExtract
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(text = comic.title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 13.sp)
+    }
+}
+
+private fun iconFor(type: ComicType): String = when (type) {
+    ComicType.CBZ -> "📕"
+    ComicType.CBR -> "📕"
+    ComicType.ZIP -> "📦"
+    ComicType.RAR -> "📦"
+    ComicType.SEVEN_ZIP -> "📦"
+    ComicType.PDF -> "📄"
+    ComicType.FOLDER -> "📁"
+    else -> "❓"
+}
+
+private fun formatSize(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024L * 1024L * 1024L -> "${bytes / (1024 * 1024)} MB"
+        else -> "${bytes / (1024L * 1024L * 1024L)} GB"
+    }
+}
