@@ -96,7 +96,6 @@ fun LibraryScreen(
     var searchVisible by remember { mutableStateOf(false) }
     var sortMode by remember { mutableStateOf(0) }
 
-    // Estados para Mover/Copiar/Cortar
     var fileToDelete by remember { mutableStateOf<File?>(null) }
     var fileToRename by remember { mutableStateOf<File?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -104,14 +103,12 @@ fun LibraryScreen(
     var fileToCopy by remember { mutableStateOf<File?>(null) }
     var isCutOperation by remember { mutableStateOf(false) }
 
-    // Estados para Extraer
     var comicToExtract by remember { mutableStateOf<Comic?>(null) }
     var extractFolderName by remember { mutableStateOf("") }
     var extractQuality by remember { mutableStateOf("Alta (100%)") }
     var isExtracting by remember { mutableStateOf(false) }
     var extractionProgress by remember { mutableStateOf(0 to 0) }
 
-    // Estado para Modo Edición
     var isEditMode by remember { mutableStateOf(false) }
     var selectedFiles by remember { mutableStateOf<Set<File>>(emptySet()) }
 
@@ -130,11 +127,7 @@ fun LibraryScreen(
     }
 
     fun toggleSelection(file: File) {
-        selectedFiles = if (selectedFiles.contains(file)) {
-            selectedFiles - file
-        } else {
-            selectedFiles + file
-        }
+        selectedFiles = if (selectedFiles.contains(file)) selectedFiles - file else selectedFiles + file
     }
 
     fun pasteFile() {
@@ -180,17 +173,11 @@ fun LibraryScreen(
     val canGoUp = !isRootFolder && parentDir != null
 
     BackHandler(enabled = true) {
-        if (isEditMode) {
-            isEditMode = false
-            selectedFiles = emptySet()
-        } else if (canGoUp) {
-            currentPath = parentDir!!.absolutePath
-        } else {
-            onBack()
-        }
+        if (isEditMode) { isEditMode = false; selectedFiles = emptySet() }
+        else if (canGoUp) currentPath = parentDir!!.absolutePath
+        else onBack()
     }
-
-    // --- DIÁLOGOS (Mover, Renombrar, Eliminar, Extraer, Selección Múltiple) ---
+        // --- DIÁLOGOS ---
     if (fileToDelete != null) {
         AlertDialog(
             onDismissRequest = { fileToDelete = null },
@@ -200,10 +187,7 @@ fun LibraryScreen(
                 TextButton(onClick = {
                     val f = fileToDelete!!
                     fileToDelete = null
-                    scope.launch {
-                        FileOperations.delete(f)
-                        reloadCurrentFolder()
-                    }
+                    scope.launch { FileOperations.delete(f); reloadCurrentFolder() }
                 }) { Text("Eliminar", color = Color(0xFFFF5555)) }
             },
             dismissButton = { TextButton(onClick = { fileToDelete = null }) { Text("Cancelar", color = Color.White) } },
@@ -216,10 +200,7 @@ fun LibraryScreen(
             onDismissRequest = { fileToRename = null },
             title = { Text("Renombrar", color = Color.White) },
             text = {
-                OutlinedTextField(
-                    value = renameText, onValueChange = { renameText = it },
-                    singleLine = true, textStyle = TextStyle(color = Color.White), modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true, textStyle = TextStyle(color = Color.White), modifier = Modifier.fillMaxWidth())
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -248,12 +229,7 @@ fun LibraryScreen(
                     Spacer(Modifier.height(10.dp))
                     LazyColumn(modifier = Modifier.height(200.dp)) {
                         items(subDirs) { dir ->
-                            Text(
-                                text = dir.name, color = Color.White,
-                                modifier = Modifier.fillMaxWidth().clickable { selectedMoveTarget = dir }
-                                    .background(if (selectedMoveTarget == dir) Color(0xFF2A2A2A) else Color.Transparent)
-                                    .padding(10.dp)
-                            )
+                            Text(text = dir.name, color = Color.White, modifier = Modifier.fillMaxWidth().clickable { selectedMoveTarget = dir }.background(if (selectedMoveTarget == dir) Color(0xFF2A2A2A) else Color.Transparent).padding(10.dp))
                         }
                     }
                 }
@@ -282,20 +258,12 @@ fun LibraryScreen(
                         CircularProgressIndicator(color = Color(0xFFFF6B00), modifier = Modifier.size(40.dp))
                     } else {
                         Text("Nombre de la carpeta:", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
-                        OutlinedTextField(
-                            value = extractFolderName, onValueChange = { extractFolderName = it },
-                            singleLine = true, textStyle = TextStyle(color = Color.White), modifier = Modifier.fillMaxWidth()
-                        )
+                        OutlinedTextField(value = extractFolderName, onValueChange = { extractFolderName = it }, singleLine = true, textStyle = TextStyle(color = Color.White), modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(12.dp))
                         Text("Calidad:", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf("Alta (100%)", "Media (75%)", "Baja (50%)").forEach { q ->
-                                Button(
-                                    onClick = { extractQuality = q },
-                                    colors = ButtonDefaults.buttonColors(containerColor = if (extractQuality == q) Color(0xFFFF6B00) else Color(0xFF2A2A2A)),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
-                                ) { Text(q, fontSize = 11.sp, color = Color.White) }
+                                Button(onClick = { extractQuality = q }, colors = ButtonDefaults.buttonColors(containerColor = if (extractQuality == q) Color(0xFFFF6B00) else Color(0xFF2A2A2A)), modifier = Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text(q, fontSize = 11.sp, color = Color.White) }
                             }
                         }
                     }
@@ -303,65 +271,46 @@ fun LibraryScreen(
             },
             confirmButton = {
                 if (!isExtracting) {
-                    Button(
-                        onClick = {
-                            val comic = comicToExtract!!
-                            val calidad = when (extractQuality) { "Alta (100%)" -> 100; "Media (75%)" -> 75; else -> 50 }
-                            isExtracting = true
-                            scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    FileOperations.extractImages(context, comic, calidad, reducirTamaño = calidad < 100) { current, total ->
-                                        extractionProgress = current to total
-                                    }
-                                }
-                                isExtracting = false
-                                comicToExtract = null
-                                reloadCurrentFolder()
+                    Button(onClick = {
+                        val comic = comicToExtract!!
+                        val calidad = when (extractQuality) { "Alta (100%)" -> 100; "Media (75%)" -> 75; else -> 50 }
+                        isExtracting = true
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                FileOperations.extractImages(context, comic, calidad, reducirTamaño = calidad < 100) { current, total -> extractionProgress = current to total }
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))
-                    ) { Text("Extraer", color = Color.White) }
+                            isExtracting = false
+                            comicToExtract = null
+                            reloadCurrentFolder()
+                        }
+                    }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))) { Text("Extraer", color = Color.White) }
                 }
             },
-            dismissButton = {
-                if (!isExtracting) {
-                    TextButton(onClick = { comicToExtract = null }) { Text("Cancelar", color = Color.White) }
-                }
-            },
+            dismissButton = { if (!isExtracting) TextButton(onClick = { comicToExtract = null }) { Text("Cancelar", color = Color.White) } },
             containerColor = Color(0xFF1A1A1A)
         )
     }
-        Column(modifier = Modifier.fillMaxSize()) { // Fondo transparente
+
+    // --- INTERFAZ PRINCIPAL ---
+    Column(modifier = Modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF1F3A4D).copy(alpha = 0.9f))
-                .padding(horizontal = 4.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth().background(Color(0xFF1F3A4D).copy(alpha = 0.9f)).padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = {
                 if (isEditMode) { isEditMode = false; selectedFiles = emptySet() }
                 else if (canGoUp) currentPath = parentDir!!.absolutePath
                 else onBack()
-            }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White)
-            }
+            }) { Icon(Icons.Default.ArrowBack, contentDescription = "Atrás", tint = Color.White) }
             Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
-                Text(
-                    text = if (isEditMode) "${selectedFiles.size} seleccionados" else currentDir.name.ifEmpty { folderName },
-                    color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
+                Text(text = if (isEditMode) "${selectedFiles.size} seleccionados" else currentDir.name.ifEmpty { folderName }, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(text = currentPath, color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (!isEditMode) {
-                IconButton(onClick = { searchVisible = !searchVisible }) {
-                    Icon(Icons.Default.Search, contentDescription = "Buscar", tint = Color.White)
-                }
+                IconButton(onClick = { searchVisible = !searchVisible }) { Icon(Icons.Default.Search, contentDescription = "Buscar", tint = Color.White) }
                 Box {
                     var showSortMenu by remember { mutableStateOf(false) }
-                    IconButton(onClick = { showSortMenu = true }) {
-                        Icon(Icons.Default.Sort, contentDescription = "Orden", tint = Color.White)
-                    }
+                    IconButton(onClick = { showSortMenu = true }) { Icon(Icons.Default.Sort, contentDescription = "Orden", tint = Color.White) }
                     DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }, modifier = Modifier.background(Color(0xFF2A2A2A))) {
                         DropdownMenuItem(text = { Text("Nombre (A - Z)", color = Color.White) }, onClick = { sortMode = 0; showSortMenu = false })
                         DropdownMenuItem(text = { Text("Nombre (Z - A)", color = Color.White) }, onClick = { sortMode = 1; showSortMenu = false })
@@ -373,69 +322,35 @@ fun LibraryScreen(
         }
 
         if (searchVisible && !isEditMode) {
-            OutlinedTextField(
-                value = searchQuery, onValueChange = { searchQuery = it },
-                placeholder = { Text("Buscar...", color = Color.White.copy(alpha = 0.4f), fontSize = 13.sp) },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                singleLine = true, textStyle = TextStyle(color = Color.White, fontSize = 14.sp)
-            )
+            OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it }, placeholder = { Text("Buscar...", color = Color.White.copy(alpha = 0.4f), fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), singleLine = true, textStyle = TextStyle(color = Color.White, fontSize = 14.sp))
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().background(Color(0xFF16293A).copy(alpha = 0.9f)).padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "✅ ${displayedComics.size} cómics · ${subfolders.size} carpetas",
-                color = Color(0xFFFF6B00), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)
-            )
+        Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF16293A).copy(alpha = 0.9f)).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "✅ ${displayedComics.size} cómics · ${subfolders.size} carpetas", color = Color(0xFFFF6B00), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             if (!isEditMode) {
-                IconButton(onClick = { viewMode = ViewMode.LIST_THUMB; scope.launch { prefs.saveViewMode(ViewMode.LIST_THUMB) } }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.ViewList, contentDescription = "Lista", tint = if (viewMode == ViewMode.LIST_THUMB) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.5f))
-                }
-                IconButton(onClick = { viewMode = ViewMode.GRID_2; scope.launch { prefs.saveViewMode(ViewMode.GRID_2) } }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.GridView, contentDescription = "Cuadrícula", tint = if (viewMode == ViewMode.GRID_2) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.5f))
-                }
-                IconButton(onClick = { viewMode = ViewMode.LIST_COMPACT; scope.launch { prefs.saveViewMode(ViewMode.LIST_COMPACT) } }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.List, contentDescription = "Compacto", tint = if (viewMode == ViewMode.LIST_COMPACT) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.5f))
-                }
+                IconButton(onClick = { viewMode = ViewMode.LIST_THUMB; scope.launch { prefs.saveViewMode(ViewMode.LIST_THUMB) } }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.ViewList, contentDescription = "Lista", tint = if (viewMode == ViewMode.LIST_THUMB) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.5f)) }
+                IconButton(onClick = { viewMode = ViewMode.GRID_2; scope.launch { prefs.saveViewMode(ViewMode.GRID_2) } }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.GridView, contentDescription = "Cuadrícula", tint = if (viewMode == ViewMode.GRID_2) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.5f)) }
+                IconButton(onClick = { viewMode = ViewMode.LIST_COMPACT; scope.launch { prefs.saveViewMode(ViewMode.LIST_COMPACT) } }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.List, contentDescription = "Compacto", tint = if (viewMode == ViewMode.LIST_COMPACT) Color(0xFFFF6B00) else Color.White.copy(alpha = 0.5f)) }
             }
         }
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
-                isLoading -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color(0xFFFF6B00))
-                    }
-                }
-                (comics == null || comics!!.isEmpty()) && subfolders.isEmpty() -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No se encontraron cómics", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
-                    }
-                }
+                isLoading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFFFF6B00)) }
+                (comics == null || comics!!.isEmpty()) && subfolders.isEmpty() -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No se encontraron cómics", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp) }
                 else -> {
                     when (viewMode) {
-                        ViewMode.LIST_THUMB, ViewMode.LIST_COMPACT -> LazyColumn(
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
+                        ViewMode.LIST_THUMB, ViewMode.LIST_COMPACT -> LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(subfolders, key = { it.absolutePath }) { dir ->
-                                val isSelected = selectedFiles.contains(dir)
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
-                                    if (isEditMode) toggleSelection(dir) else currentPath = dir.absolutePath
-                                }) {
-                                    if (isEditMode) Checkbox(checked = isSelected, onCheckedChange = { toggleSelection(dir) })
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { if (isEditMode) toggleSelection(dir) else currentPath = dir.absolutePath }) {
+                                    if (isEditMode) Checkbox(checked = selectedFiles.contains(dir), onCheckedChange = { toggleSelection(dir) })
                                     FolderRow(dir, { if (isEditMode) toggleSelection(dir) else currentPath = dir.absolutePath }, { fileToDelete = dir }, { fileToRename = dir; renameText = dir.name }, { fileToMove = dir })
                                 }
                             }
                             items(displayedComics, key = { it.id }) { comic ->
                                 val file = File(comic.path)
-                                val isSelected = selectedFiles.contains(file)
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
-                                    if (isEditMode) toggleSelection(file) else onComicClick(comic, displayedComics)
-                                }) {
-                                    if (isEditMode) Checkbox(checked = isSelected, onCheckedChange = { toggleSelection(file) })
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { if (isEditMode) toggleSelection(file) else onComicClick(comic, displayedComics) }) {
+                                    if (isEditMode) Checkbox(checked = selectedFiles.contains(file), onCheckedChange = { toggleSelection(file) })
                                     ComicRowWithThumbnail(comic, thumbnailExtractor, { fileToDelete = file }, { fileToRename = file; renameText = file.name }, { fileToMove = file }, { fileToCopy = file; isCutOperation = false }, { fileToCopy = file; isCutOperation = true }, { comicToExtract = comic; extractFolderName = comic.title })
                                 }
                             }
@@ -443,23 +358,16 @@ fun LibraryScreen(
                         }
                         else -> {
                             val columns = when(viewMode) { ViewMode.GRID_2 -> 2; ViewMode.GRID_3 -> 3; ViewMode.GRID_4 -> 4; else -> 6 }
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(columns), modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
+                            LazyVerticalGrid(columns = GridCells.Fixed(columns), modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 items(subfolders, key = { it.absolutePath }) { dir ->
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
-                                        if (isEditMode) toggleSelection(dir) else currentPath = dir.absolutePath
-                                    }) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { if (isEditMode) toggleSelection(dir) else currentPath = dir.absolutePath }) {
                                         if (isEditMode) Checkbox(checked = selectedFiles.contains(dir), onCheckedChange = { toggleSelection(dir) })
                                         FolderGridItem(dir, { if (isEditMode) toggleSelection(dir) else currentPath = dir.absolutePath }, { fileToDelete = dir }, { fileToRename = dir; renameText = dir.name }, { fileToMove = dir })
                                     }
                                 }
                                 items(displayedComics, key = { it.id }) { comic ->
                                     val file = File(comic.path)
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
-                                        if (isEditMode) toggleSelection(file) else onComicClick(comic, displayedComics)
-                                    }) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { if (isEditMode) toggleSelection(file) else onComicClick(comic, displayedComics) }) {
                                         if (isEditMode) Checkbox(checked = selectedFiles.contains(file), onCheckedChange = { toggleSelection(file) })
                                         ComicGridItem(comic, thumbnailExtractor, { fileToDelete = file }, { fileToRename = file; renameText = file.name }, { fileToMove = file }, { fileToCopy = file; isCutOperation = false }, { fileToCopy = file; isCutOperation = true }, { comicToExtract = comic; extractFolderName = comic.title })
                                     }
@@ -472,27 +380,12 @@ fun LibraryScreen(
             }
         }
         
-        // BARRA INFERIOR DE ACCIONES RÁPIDAS (Pegar o Borrar múltiple)
         if (fileToCopy != null || (isEditMode && selectedFiles.isNotEmpty())) {
-            Row(
-                modifier = Modifier.fillMaxWidth().background(Color(0xFF1F3A4D)).padding(8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
+            Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF1F3A4D)).padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                 if (isEditMode && selectedFiles.isNotEmpty()) {
-                    Button(onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                selectedFiles.forEach { FileOperations.delete(it) }
-                            }
-                            selectedFiles = emptySet(); isEditMode = false; reloadCurrentFolder()
-                        }
-                    }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5555))) {
-                        Text("Eliminar ${selectedFiles.size} seleccionados", color = Color.White)
-                    }
+                    Button(onClick = { scope.launch { withContext(Dispatchers.IO) { selectedFiles.forEach { FileOperations.delete(it) } }; selectedFiles = emptySet(); isEditMode = false; reloadCurrentFolder() } }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5555))) { Text("Eliminar ${selectedFiles.size} seleccionados", color = Color.White) }
                 } else if (fileToCopy != null) {
-                    Button(onClick = { pasteFile() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))) {
-                        Text(if (isCutOperation) "Mover aquí" else "Pegar aquí", color = Color.White)
-                    }
+                    Button(onClick = { pasteFile() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B00))) { Text(if (isCutOperation) "Mover aquí" else "Pegar aquí", color = Color.White) }
                 }
             }
         }
